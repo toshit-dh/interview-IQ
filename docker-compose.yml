@@ -1,0 +1,25 @@
+services:
+  frontend:
+    build:
+      context: ./client   # React project folder
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./server-express  # Node.js backend folder
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+
+  python-service:
+    build:
+      context: ./server-flask   # Python folder
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
