@@ -2,22 +2,22 @@
 
 const PaymentController = {
   // Create a new payment/transaction record
-  createTransaction: async (req, res) => {
+  createTransaction: async (req, res, next) => {
     // TODO: Implement creating a new transaction after payment
   },
 
   // Get all transactions of a specific user
-  getUserTransactions: async (req, res) => {
+  getUserTransactions: async (req, res, next) => {
     // TODO: Implement fetching all transactions of a user
   },
 
   // Get transaction details by ID
-  getTransactionById: async (req, res) => {
+  getTransactionById: async (req, res, next) => {
     // TODO: Implement fetching a specific transaction
   },
 
   // Optional: Upgrade user's premium plan
-  upgradePremiumPlan: async (req, res) => {
+  upgradePremiumPlan: async (req, res, next) => {
     // TODO: Implement upgrading user's premium plan
   },
 };
