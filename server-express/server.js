@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { Server as SocketServer } from "socket.io";
 
 // Folder imports
+import routes from "./routes/route.js"
 import { connectDB } from "./utils/connectDB.js";
 
 dotenv.config();
@@ -33,6 +34,7 @@ connectDB();
 app.get("/", (req, res) => {
   res.send("🚀 Welcome to Interview IQ");
 });
+app.use("/api", routes);
 
 // =======================
 // HTTP + Socket.io setup
