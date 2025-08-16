@@ -34,7 +34,6 @@ connectDB();
 app.get("/", (req, res) => {
   res.send("🚀 Welcome to Interview IQ");
 });
-app.use("/api", routes);
 
 // =======================
 // HTTP + Socket.io setup
