@@ -1,6 +1,10 @@
 // route.js
 import express from "express";
 const router = express.Router();
+import verifyToken from "../middlewares/VerifyToken.js";
+import errorHandler from "../middlewares/ErrorHandler.js";
+
+router.use(verifyToken);
 
 // ----------------- User Routes -----------------
 import userRoutes from "./User/UserRoutes.js";
@@ -30,5 +34,7 @@ router.use("/community", communityRoutes);
 // ----------------- Payment Routes -----------------
 import paymentRoutes from "./PaymentRoutes.js";
 router.use("/payment", paymentRoutes);
+
+router.use(errorHandler);
 
 export default router;
