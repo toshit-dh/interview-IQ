@@ -3,6 +3,7 @@ import { axiosClient1 } from "./axios.js";
 const UserApi = {
   register: (data) => axiosClient1.post("/users/register", data),
   login: (data) => axiosClient1.post("/users/login", data),
+  verifyEmail: (token) => axiosClient1.get(`/users/verify-email/${token}`),
   getProfile: (id) => axiosClient1.get(`/users/${id}`),
   updateProfile: (id, data) => axiosClient1.put(`/users/${id}`, data),
   getFollowers: (id) => axiosClient1.get(`/users/${id}/followers`),
@@ -26,3 +27,5 @@ const BadgeApi = {
   updateBadge: (id, data) => axiosClient1.put(`/badges/${id}`, data),
   deleteBadge: (id) => axiosClient1.delete(`/badges/${id}`),
 };
+
+export { UserApi, StatsApi, BadgeApi };

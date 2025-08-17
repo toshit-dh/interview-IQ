@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const premiumPlanSchema = new mongoose.Schema({
   name: {
@@ -14,4 +14,4 @@ const premiumPlanSchema = new mongoose.Schema({
 
 const Plan = mongoose.model("PremiumPlan", premiumPlanSchema);
 
-export default Plan
+export default Plan;

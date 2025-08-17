@@ -5,6 +5,7 @@ import UserController from "../../controllers/User/UserController.js";
 // Auth
 router.post("/register", UserController.register);
 router.post("/login", UserController.login);
+router.get("/verify-email/:token", UserController.verifyEmail);
 
 // Profile
 router.get("/:id", UserController.getUserProfile);

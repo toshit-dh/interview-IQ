@@ -19,7 +19,12 @@ const PORT = process.env.PORT || 3000;
 // =======================
 // Middleware
 // =======================
-app.use(cors()); // Enable CORS for all routes
+app.use(
+  cors({
+    origin: "http://localhost:5173", 
+    credentials: true,
+  })
+); // Enable CORS for all routes
 app.use(morgan("dev")); // Logger
 app.use(express.json()); // Parse JSON bodies
 
@@ -34,6 +39,7 @@ connectDB();
 app.get("/", (req, res) => {
   res.send("🚀 Welcome to Interview IQ");
 });
+app.use("/api",routes);
 
 // =======================
 // HTTP + Socket.io setup

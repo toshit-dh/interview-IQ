@@ -3,14 +3,14 @@ import axios from "axios";
 
 // Create instances
 const axiosClient1 = axios.create({
-  baseURL: process.env.REACT_APP_SERVER1_DOMAIN, // Note: must start with REACT_APP_
+  baseURL: import.meta.env.VITE_SERVER1_DOMAIN + "/api",
   timeout: 10000,
   withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
 
 const axiosClient2 = axios.create({
-  baseURL: process.env.REACT_APP_SERVER2_DOMAIN,
+  baseURL: import.meta.env.VITE_SERVER2_DOMAIN + "/api",
   timeout: 10000,
   headers: { "Content-Type": "application/json" },
 });

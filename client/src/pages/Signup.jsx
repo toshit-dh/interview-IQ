@@ -1,62 +1,104 @@
-// src/pages/Signup.jsx
-import React, { useState } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { UserApi } from "../../api/UserApi";
 
 export default function Signup() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-  });
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Signup form submitted:", formData);
-    alert("Signup successful (dummy)!");
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const res = await UserApi.register(form);
+      setMessage(res.message || "Registered successfully! Check your email.");
+      setLoading(false);
+      // Optionally redirect to login after a delay
+      // setTimeout(() => navigate("/login"), 3000);
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Registration failed.");
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="bg-white shadow-md rounded-2xl p-6 w-96">
-        <h2 className="text-2xl font-bold text-center mb-4">Signup</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="text"
-            name="name"
-            placeholder="Full Name"
-            value={formData.name}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg p-2"
-            required
-          />
-          <input
-            type="email"
-            name="email"
-            placeholder="Email Address"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg p-2"
-            required
-          />
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg p-2"
-            required
-          />
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-r from-purple-50 to-purple-100">
+      <div className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md">
+        <h2 className="text-3xl font-bold mb-6 text-center">Sign Up</h2>
+
+        {message && (
+          <div
+            className={`mb-4 text-center font-medium ${
+              message.includes("success") ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {message}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block mb-1 font-medium">Name</label>
+            <input
+              type="text"
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              required
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">Email</label>
+            <input
+              type="email"
+              name="email"
+              value={form.email}
+              onChange={handleChange}
+              required
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-1 font-medium">Password</label>
+            <input
+              type="password"
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+              required
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition"
+            disabled={loading}
+            className="w-full bg-purple-600 text-white font-semibold py-2 rounded-lg hover:bg-purple-700 transition"
           >
-            Signup
+            {loading ? "Signing up..." : "Sign Up"}
           </button>
         </form>
+
+        <p className="text-center mt-4 text-gray-500">
+          Already have an account?{" "}
+          <span
+            className="text-purple-600 cursor-pointer hover:underline"
+            onClick={() => navigate("/login")}
+          >
+            Login
+          </span>
+        </p>
       </div>
     </div>
   );

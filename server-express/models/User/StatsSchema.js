@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const statsSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // User reference
@@ -63,4 +63,4 @@ statsSchema.pre("save", function (next) {
 
 const Stats = mongoose.model("Stats", statsSchema);
 
-export default Stats
+export default Stats;

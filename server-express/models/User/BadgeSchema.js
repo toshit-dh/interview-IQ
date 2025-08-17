@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const badgeSchema = new mongoose.Schema({
   name: { type: String, required: true }, // Badge name
@@ -9,4 +9,4 @@ const badgeSchema = new mongoose.Schema({
 
 const Badge = mongoose.model("Badge", badgeSchema);
 
-export default Badge
+export default Badge;

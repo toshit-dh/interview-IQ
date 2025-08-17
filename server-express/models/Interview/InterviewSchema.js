@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const interviewSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // User who took the interview
@@ -22,4 +22,4 @@ const interviewSchema = new mongoose.Schema({
 
 const Interview = mongoose.model("Interview", interviewSchema);
 
-export default Interview
+export default Interview;

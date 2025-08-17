@@ -1,8 +1,11 @@
 import jwt from "jsonwebtoken";
 
 const verifyToken = (req, res, next) => {
-    
-  if (req.path === "/login" || req.path === "/register") {
+  if (
+    req.path === "/users/login" ||
+    req.path === "/users/register" ||
+    req.path.startsWith("/users/verify-email")
+  ) {
     return next();
   }
 

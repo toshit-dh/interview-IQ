@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const socialActivitySchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // User performing activity
@@ -13,4 +13,4 @@ const socialActivitySchema = new mongoose.Schema({
 
 const Activity = mongoose.model("SocialActivity", socialActivitySchema);
 
-export default Activity
+export default Activity;

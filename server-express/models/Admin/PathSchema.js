@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const pathSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true }, // Name of the exam/path
@@ -9,4 +9,4 @@ const pathSchema = new mongoose.Schema({
 
 const Path = mongoose.model("Path", pathSchema);
 
-export default Path
+export default Path;
