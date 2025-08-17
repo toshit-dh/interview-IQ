@@ -1,15 +1,51 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+import MainLayout from "./layouts/MainLayout";
+import AuthLayout from "./layouts/AuthLayout";
+
+import Home from "./pages/Home";
+import Profile from "./pages/Profile";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 
 function App() {
   return (
-    <div className="h-screen flex items-center justify-center bg-blue-500">
-      <h1 className="text-5xl font-bold text-white">Tailwind is working!</h1>
-    </div>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Routes with Navbar */}
+          <Route element={<MainLayout />}>
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute allowedRoles={["user", "admin"]}>
+                  <Home />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Protected routes */}
+            <Route
+              path="/profile/:id"
+              element={
+                <ProtectedRoute allowedRoles={["user", "admin"]}>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          {/* Auth routes without Navbar */}
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 
 export default App;
-
