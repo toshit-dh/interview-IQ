@@ -1,5 +1,4 @@
 // server.js
-
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -36,9 +35,6 @@ connectDB();
 // =======================
 // Routes
 // =======================
-app.get("/", (req, res) => {
-  res.send("🚀 Welcome to Interview IQ");
-});
 app.use("/api",routes);
 
 // =======================
@@ -48,18 +44,7 @@ const server = createServer(app);
 const io = new SocketServer(server, {
   cors: { origin: "*" },
 });
-
-// =======================
-// Socket.io Logic
-// =======================
-io.on("connection", (socket) => {
-  console.log(`🔌 New client connected: ${socket.id}`);
-
-  socket.on("disconnect", () => {
-    console.log(`❌ Client disconnected: ${socket.id}`);
-  });
-});
-
+app.set('io',io)
 // =======================
 // Start Server
 // =======================

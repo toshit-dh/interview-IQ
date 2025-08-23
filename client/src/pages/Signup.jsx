@@ -22,7 +22,7 @@ export default function Signup() {
       setMessage(res.message || "Registered successfully! Check your email.");
       setLoading(false);
       // Optionally redirect to login after a delay
-      // setTimeout(() => navigate("/login"), 3000);
+      setTimeout(() => navigate("/login"), 3000);
     } catch (err) {
       setMessage(err.response?.data?.message || "Registration failed.");
       setLoading(false);

@@ -5,6 +5,9 @@ import verifyToken from "../middlewares/VerifyToken.js";
 import errorHandler from "../middlewares/ErrorHandler.js";
 
 router.use(verifyToken);
+router.get("/", (_, res) => {
+  res.send("🚀 Welcome to Interview IQ");
+});
 
 // ----------------- User Routes -----------------
 import userRoutes from "./User/UserRoutes.js";
