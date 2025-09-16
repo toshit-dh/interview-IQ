@@ -1,25 +1,37 @@
 services:
   frontend:
     build:
-      context: ./client   # React project folder
+      context: ./client
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
     depends_on:
       - backend
+      - python-service
 
   backend:
     build:
-      context: ./server-express  # Node.js backend folder
+      context: ./server-express
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - ./server-express:/app
+      - /app/node_modules
     environment:
       NODE_ENV: development
+    command: npx nodemon server.js
 
   python-service:
     build:
-      context: ./server-flask   # Python folder
+      context: ./server-flask
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
+    volumes:
+      - ./server-flask:/app
+    command: flask run --host=0.0.0.0 --reload

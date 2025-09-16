@@ -1,29 +1,19 @@
-# Step 1: Build the React app
-FROM node:20-alpine AS build
+# Use Node 20 image
+FROM node:20
 
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY package.json package-lock.json ./
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
 RUN npm install
 
-# Copy the rest of the source code
+# Copy all source code
 COPY . .
 
-# Build the React app
-RUN npm run build
+# Expose dev server port
+EXPOSE 5173
 
-# Step 2: Serve with Nginx
-FROM nginx:alpine
-
-# Copy build files to Nginx html folder
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy custom nginx config if needed (optional)
-# COPY nginx.conf /etc/nginx/nginx.conf
-
-# Expose port 80
-EXPOSE 80
-
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start Vite dev server (hot reload)
+CMD ["npm", "run", "dev"]
