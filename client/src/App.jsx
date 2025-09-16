@@ -44,6 +44,7 @@ function App() {
             <Route path="/signup" element={<Signup />} />
             <Route path="/verify-email/:token" element={<VerifyEmail />} />
           </Route>
+          <Route path="/home" element={<Home />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
