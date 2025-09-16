@@ -5,9 +5,7 @@ export default function MainLayout() {
   return (
     <div>
       <Navbar />
-      <div className="p-4">
-        <Outlet /> 
-      </div>
+      <Outlet /> 
     </div>
   );
 }
