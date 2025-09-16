@@ -6,7 +6,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   const { user } = useAuth();  
   
   if (!user) {
-    // Not logged in
+    console.log("No user");
     return <Navigate to="/login" replace />;
   }
 

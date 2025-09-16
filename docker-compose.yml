@@ -6,8 +6,8 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./client:/app
-      - /app/node_modules
+      - ./client:/app  # Mount your source code
+      - node_modules_frontend:/app/node_modules # Use a named volume for node_modules
     command: npm run dev -- --host 0.0.0.0
     depends_on:
       - backend
@@ -21,7 +21,7 @@ services:
       - "3000:3000"
     volumes:
       - ./server-express:/app
-      - /app/node_modules
+      - node_modules_backend:/app/node_modules # Same for backend
     environment:
       NODE_ENV: development
     command: npx nodemon server.js
@@ -35,3 +35,7 @@ services:
     volumes:
       - ./server-flask:/app
     command: flask run --host=0.0.0.0 --reload
+
+volumes: # Define your named volumes here
+  node_modules_frontend:
+  node_modules_backend:
