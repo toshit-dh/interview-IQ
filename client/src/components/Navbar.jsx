@@ -4,9 +4,18 @@ import {
   Menu,
   X
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 export default function Navbar() {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const navigate = useNavigate();
+  const handleLogout = () => {
+    // Clear localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    // Redirect to login
+    navigate('/login');
+  };
 
   return (
     <nav className="bg-black/20 backdrop-blur-lg">
@@ -54,6 +63,12 @@ export default function Navbar() {
               >
                 Premium
               </a>
+              <button 
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 hover:text-red-300 transition-all border border-red-500/30"
+              >
+                <span>Logout</span>
+              </button>
             </div>
 
             {/* Mobile Menu Button */}
