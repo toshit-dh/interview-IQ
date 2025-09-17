@@ -1,20 +1,20 @@
 import { useState } from "react";
-import {
-  Brain,
-  Menu,
-  X
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
-export default function Navbar() {
+import { Brain, Menu, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
+export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
+  console.log(user);
+  
+
   const navigate = useNavigate();
+
   const handleLogout = () => {
-    // Clear localStorage
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    // Redirect to login
-    navigate('/login');
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
   };
 
   return (
@@ -22,6 +22,7 @@ export default function Navbar() {
       <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
+            {/* Logo */}
             <div className="flex items-center space-x-2">
               <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                 <Brain className="w-6 h-6 text-white" />
@@ -33,37 +34,39 @@ export default function Navbar() {
 
             {/* Desktop Menu */}
             <div className="hidden md:flex items-center space-x-8">
-              <a
-                href="#profile"
-                className="text-gray-300 hover:text-white transition-colors"
-              >
-                Profile
-              </a>
-              <a
-                href="#explore"
+              {user && (
+                <Link
+                  to={`/profile/${user.id}`}
+                  className="text-gray-300 hover:text-white transition-colors"
+                >
+                  Profile
+                </Link>
+              )}
+              <Link
+                to="/explore"
                 className="text-gray-300 hover:text-white transition-colors"
               >
                 Explore
-              </a>
-              <a
-                href="#contest"
+              </Link>
+              <Link
+                to="/contest"
                 className="text-gray-300 hover:text-white transition-colors"
               >
                 Contest
-              </a>
-              <a
-                href="#contest"
+              </Link>
+              <Link
+                to="/discuss"
                 className="text-gray-300 hover:text-white transition-colors"
               >
                 Discuss
-              </a>
-              <a
-                href="#premium"
+              </Link>
+              <Link
+                to="/premium"
                 className="text-gray-300 hover:text-white transition-colors"
               >
                 Premium
-              </a>
-              <button 
+              </Link>
+              <button
                 onClick={handleLogout}
                 className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 hover:text-red-300 transition-all border border-red-500/30"
               >
@@ -85,29 +88,51 @@ export default function Navbar() {
         {isMenuOpen && (
           <div className="md:hidden bg-black/90 backdrop-blur-lg">
             <div className="px-4 pt-2 pb-4 space-y-2">
-              <a
-                href="#features"
+              {user && (
+                <Link
+                  to={`/profile/${user._id}`}
+                  className="block py-2 text-gray-300 hover:text-white transition-colors"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Profile
+                </Link>
+              )}
+              <Link
+                to="/explore"
                 className="block py-2 text-gray-300 hover:text-white transition-colors"
+                onClick={() => setIsMenuOpen(false)}
               >
-                Features
-              </a>
-              <a
-                href="#pricing"
+                Explore
+              </Link>
+              <Link
+                to="/contest"
                 className="block py-2 text-gray-300 hover:text-white transition-colors"
+                onClick={() => setIsMenuOpen(false)}
               >
-                Pricing
-              </a>
-              <a
-                href="#testimonials"
+                Contest
+              </Link>
+              <Link
+                to="/discuss"
                 className="block py-2 text-gray-300 hover:text-white transition-colors"
+                onClick={() => setIsMenuOpen(false)}
               >
-                Reviews
-              </a>
-              <button className="block w-full text-left py-2 text-purple-400 hover:text-purple-300 transition-colors">
-                Sign In
-              </button>
-              <button className="w-full mt-2 px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full hover:from-purple-600 hover:to-pink-600 transition-all">
-                Get Started
+                Discuss
+              </Link>
+              <Link
+                to="/premium"
+                className="block py-2 text-gray-300 hover:text-white transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Premium
+              </Link>
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleLogout();
+                }}
+                className="block w-full text-left py-2 text-red-400 hover:text-red-300 transition-colors"
+              >
+                Logout
               </button>
             </div>
           </div>

@@ -9,6 +9,15 @@ const statsSchema = new mongoose.Schema({
   rank: { type: Number, default: 0 },
   percentile: { type: Number, default: 0 },
 
+  activityLog: [
+    {
+      date: { type: Date, required: true },
+      interviewsGiven: { type: Number, default: 0 },
+      timeSpent: { type: Number, default: 0 }, // in minutes
+      score: { type: Number, default: 0 },
+    },
+  ],
+
   // Path progress
   completedPaths: [{ type: mongoose.Schema.Types.ObjectId, ref: "Path" }],
   activePaths: [{ type: mongoose.Schema.Types.ObjectId, ref: "Path" }],
@@ -40,6 +49,15 @@ const statsSchema = new mongoose.Schema({
     easy: { type: Number, default: 0 },
     medium: { type: Number, default: 0 },
     hard: { type: Number, default: 0 },
+  },
+
+  behavioralStats: {
+    avgResponseTime: { type: Number, default: 0 }, // in seconds
+    fillerWordsCount: { type: Number, default: 0 }, // total fillers used
+    avgConfidenceScore: { type: Number, default: 0 }, // 0-100
+    sentimentScore: { type: Number, default: 0 }, // -1 (negative) to +1 (positive)
+    speechClarity: { type: Number, default: 0 }, // 0-100 clarity metric
+    toneVariation: { type: Number, default: 0 }, // 0-100 (monotone vs varied speech)
   },
 
   // Leaderboard info
