@@ -137,7 +137,42 @@ const UserController = {
 
   // Update user profile
   updateUserProfile: async (req, res, next) => {
-    // TODO: Implement update profile
+    try {
+      const { id } = req.user;
+      const updates = req.body;
+
+      const user = await User.findById(id);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      if (req.file) {
+        // If user already had an avatar, delete it first
+        if (user.avatar.public_id) {
+          await cloudinary.uploader.destroy(user.avatar.public_id);
+        }
+        // Save new avatar
+        updates.avatar = {
+          public_id: req.file.filename, // Cloudinary public_id
+          url: req.file.path, // Cloudinary secure URL
+        };
+      } else if (updates.removeAvatar === "true") {
+        // Remove avatar if requested
+        if (user.avatar.public_id) {
+          await cloudinary.uploader.destroy(user.avatar.public_id);
+        }
+        updates.avatar = { public_id: null, url: null };
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(id, updates, {
+        new: true,
+      });
+
+      res.json({
+        message: "Profile updated successfully",
+        user: updatedUser,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   },
 
   // List followers of a user
