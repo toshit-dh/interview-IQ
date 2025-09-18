@@ -6,7 +6,7 @@ import toast, { Toaster } from 'react-hot-toast';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", username: ""});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -70,24 +70,24 @@ export default function Signup() {
         containerClassName=""
         containerStyle={{}}
         toastOptions={{
-          className: '',
+          className: "",
           duration: 4000,
           style: {
-            background: '#363636',
-            color: '#fff',
+            background: "#363636",
+            color: "#fff",
           },
           success: {
             duration: 4000,
             theme: {
-              primary: '#10B981',
-              secondary: '#ffffff',
+              primary: "#10B981",
+              secondary: "#ffffff",
             },
           },
           error: {
             duration: 4000,
             theme: {
-              primary: '#EF4444',
-              secondary: '#ffffff',
+              primary: "#EF4444",
+              secondary: "#ffffff",
             },
           },
         }}
@@ -106,18 +106,21 @@ export default function Signup() {
                 <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                   <Brain className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-2xl font-bold text-white">Interview-IQ</span>
+                <span className="text-2xl font-bold text-white">
+                  Interview-IQ
+                </span>
               </div>
-              
+
               <h1 className="text-3xl lg:text-4xl font-bold text-white leading-tight mb-4">
                 Start Your Journey to
                 <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent block">
                   Career Success
                 </span>
               </h1>
-              
+
               <p className="text-lg text-gray-300 mb-6 leading-relaxed">
-                Join thousands of professionals who have transformed their interview skills with our AI-powered platform.
+                Join thousands of professionals who have transformed their
+                interview skills with our AI-powered platform.
               </p>
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-white/10 backdrop-blur-lg rounded-lg p-3 text-center">
@@ -132,8 +135,8 @@ export default function Signup() {
             </div>
             <div className="relative">
               <div className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 backdrop-blur-lg rounded-2xl border border-white/10 p-4 shadow-2xl">
-                <img 
-                  src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=250&fit=crop" 
+                <img
+                  src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=250&fit=crop"
                   alt="Team Collaboration"
                   className="w-full rounded-xl shadow-lg"
                 />
@@ -152,13 +155,14 @@ export default function Signup() {
           </div>
           <div className="w-full lg:mx-0">
             <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border border-white/20 p-6 lg:p-8 shadow-2xl">
-              
               <div className="lg:hidden text-center mb-6">
                 <div className="flex items-center justify-center space-x-3 mb-3">
                   <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                     <Brain className="w-5 h-5 text-white" />
                   </div>
-                  <span className="text-xl font-bold text-white">Interview-IQ</span>
+                  <span className="text-xl font-bold text-white">
+                    Interview-IQ
+                  </span>
                 </div>
               </div>
 
@@ -166,10 +170,27 @@ export default function Signup() {
                 <h2 className="text-2xl lg:text-3xl font-bold text-white mb-2">
                   Create Account
                 </h2>
-                <p className="text-gray-300 text-sm">Join the community of successful professionals</p>
+                <p className="text-gray-300 text-sm">
+                  Join the community of successful professionals
+                </p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="flex items-center mb-2 font-medium text-gray-300 text-sm">
+                    <User className="w-4 h-4 mr-2 text-purple-400" />
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    name="username"
+                    value={form.username || ""}
+                    onChange={handleChange}
+                    required
+                    placeholder="johndoe123"
+                    className="w-full bg-white/10 backdrop-blur-lg border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                  />
+                </div>
                 <div>
                   <label className="flex items-center mb-2 font-medium text-gray-300 text-sm">
                     <User className="w-4 h-4 mr-2 text-purple-400" />
@@ -220,22 +241,44 @@ export default function Signup() {
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-300 transition-colors"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
                 <div className="text-xs text-gray-400 space-y-1">
                   <p>Password should contain:</p>
                   <ul className="ml-4 space-y-1">
-                    <li className={`flex items-center ${form.password.length >= 8 ? 'text-green-400' : 'text-gray-500'}`}>
+                    <li
+                      className={`flex items-center ${
+                        form.password.length >= 8
+                          ? "text-green-400"
+                          : "text-gray-500"
+                      }`}
+                    >
                       <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
                       At least 8 characters
                     </li>
-                    <li className={`flex items-center ${form.password.trim() === form.password ? 'text-green-400' : 'text-gray-500'}`}>
+                    <li
+                      className={`flex items-center ${
+                        form.password.trim() === form.password
+                          ? "text-green-400"
+                          : "text-gray-500"
+                      }`}
+                    >
                       <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
                       No spaces at start or end
                     </li>
-                    <li className={`flex items-center ${/[0-9]/.test(form.password) ? 'text-green-400' : 'text-gray-500'}`}>
+                    <li
+                      className={`flex items-center ${
+                        /[0-9]/.test(form.password)
+                          ? "text-green-400"
+                          : "text-gray-500"
+                      }`}
+                    >
                       <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
                       One number
                     </li>
@@ -263,11 +306,17 @@ export default function Signup() {
               <div className="text-center mt-4">
                 <p className="text-xs text-gray-400">
                   By creating an account, you agree to our{" "}
-                  <a href="#" className="text-purple-400 hover:text-purple-300 underline">
+                  <a
+                    href="#"
+                    className="text-purple-400 hover:text-purple-300 underline"
+                  >
                     Terms of Service
                   </a>{" "}
                   and{" "}
-                  <a href="#" className="text-purple-400 hover:text-purple-300 underline">
+                  <a
+                    href="#"
+                    className="text-purple-400 hover:text-purple-300 underline"
+                  >
                     Privacy Policy
                   </a>
                 </p>

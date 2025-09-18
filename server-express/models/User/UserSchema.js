@@ -3,12 +3,13 @@ import Stats from "./StatsSchema.js";
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true }, // User full name
+  username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true }, // Email for login
   password: { type: String, required: true }, // Hashed password
   avatar: {
     public_id: { type: String, default: null },
     url: { type: String, default: null },
-  }, 
+  },
   bio: String, // Short bio
   isVerified: {
     type: Boolean,
@@ -35,10 +36,17 @@ const userSchema = new mongoose.Schema({
 
 userSchema.post("save", async function (doc, next) {
   try {
-    const existing = await Stats.findOne({ user: doc._id });
-    if (!existing) {
-      await Stats.create({ user: doc._id });
+    let stats = await Stats.findOne({ user: doc._id });
+    if (!stats) {
+      stats = await Stats.create({ user: doc._id });
     }
+
+    // assign stats ID to user if not set
+    if (!doc.stats) {
+      doc.stats = stats._id;
+      await doc.save();
+    }
+
     next();
   } catch (err) {
     next(err);
