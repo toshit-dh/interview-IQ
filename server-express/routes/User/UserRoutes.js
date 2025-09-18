@@ -1,6 +1,7 @@
 import express from "express";
 const router = express.Router();
 import UserController from "../../controllers/User/UserController.js";
+import { upload, uploadToCloudinary} from "../../middlewares/FileUpload.js"
 
 // Auth
 router.post("/register", UserController.register);
@@ -9,7 +10,7 @@ router.get("/verify-email/:token", UserController.verifyEmail);
 
 // Profile
 router.get("/:id", UserController.getUserProfile);
-router.put("/:id", UserController.updateUserProfile);
+router.put("/:id", upload.single("avatar"),uploadToCloudinary, UserController.updateUserProfile);
 
 // Social
 router.get("/:id/followers", UserController.getFollowers);

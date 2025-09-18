@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { verificationEmailTemplate } from "../../utils/mails/verifyEmail.js";
 import User from "../../models/User/UserSchema.js";
-import Admin from "../../models/Admin/AdminSchema.js"
+import Admin from "../../models/Admin/AdminSchema.js";
 import { sendEmail } from "../../utils/sendEmail.js";
 
 const UserController = {
@@ -11,41 +11,57 @@ const UserController = {
   register: async (req, res, next) => {
     let newUser;
     try {
-      const { name, email, password } = req.body;
+      const { username, name, email, password } = req.body;
+
       // Check required fields
-      if (!name || !email || !password) {
+      if (!username || !name || !email || !password) {
         return res.status(400).json({ message: "All fields are required" });
       }
-      // Check if user exists
-      const existingUser = await User.findOne({ email });
-      if (existingUser)
+
+      // Check if email already exists
+      const existingEmail = await User.findOne({ email });
+      if (existingEmail) {
         return res.status(400).json({ message: "Email already registered" });
+      }
+
+      // Check if username already exists
+      const existingUsername = await User.findOne({ username });
+      if (existingUsername) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
-      // Create user (paths, premium, social arrays empty by default)
+
+      // Create user
       newUser = await User.create({
+        username,
         name,
         email,
         password: hashedPassword,
       });
+
       // Create verification token
       const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
         expiresIn: "1d",
       });
+
       const verificationLink = `${process.env.CLIENT_URL}/verify-email/${token}`;
+
       // Send email
       await sendEmail({
         to: email,
         subject: "Verify your email",
         html: verificationEmailTemplate(name, verificationLink),
       });
+
       res.status(201).json({
         message: "User registered. Please check your email to verify.",
       });
     } catch (error) {
-      if (newUser && newUser._id) {
-        await User.findByIdAndDelete(newUser._id);
-      }
+      // if (newUser && newUser._id) {
+      //   await User.findByIdAndDelete(newUser._id);
+      // }
       next(error);
     }
   },
@@ -132,7 +148,22 @@ const UserController = {
 
   // Get user profile by ID
   getUserProfile: async (req, res, next) => {
-    // TODO: Implement get user profile
+    try {
+      const userId = req.user.userId;
+      
+      const user = await User.findById(userId).populate("stats").lean();
+      console.log(user);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      delete user.password;
+
+      res.json(user);
+    } catch (err) {
+      next(err);
+    }
   },
 
   // Update user profile
