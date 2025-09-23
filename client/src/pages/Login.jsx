@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { UserApi } from "../../api/UserApi";
 import { useAuth } from "../context/AuthContext";
 import toast, { Toaster } from 'react-hot-toast';
+import { toastStyle } from "../../utils/toastStyle";
 
 export default function Login() {
   const { login } = useAuth();
@@ -26,21 +27,7 @@ export default function Login() {
 
     try {
       const res = await UserApi.login(form);
-      toast.success(res.message || "Login successful!", {
-        duration: 3000,
-        position: 'bottom-left',
-        style: {
-          background: '#10B981',
-          color: '#ffffff',
-          borderRadius: '8px',
-          fontSize: '14px',
-          fontWeight: '500',
-        },
-        iconTheme: {
-          primary: '#ffffff',
-          secondary: '#10B981',
-        },
-      });
+      toast.success(res.message || "Login successful!", toastStyle(true));
       //setMessage(res.message || "Login successful!");
       setLoading(false);
 
@@ -56,23 +43,7 @@ export default function Login() {
           //"Login failed. Please check your credentials."
       //);
        toast.error(
-        err.response?.data?.message || "Login failed. Please check your credentials.",
-        {
-          duration: 4000,
-          position: 'bottom-left',
-          style: {
-            background: '#EF4444',
-            color: '#ffffff',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-          },
-          iconTheme: {
-            primary: '#ffffff',
-            secondary: '#EF4444',
-          },
-        }
-      );
+        err.response?.data?.message || "Login failed. Please check your credentials.",false);
       setLoading(false);
     }
   };
