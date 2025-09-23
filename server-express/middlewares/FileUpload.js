@@ -1,11 +1,16 @@
 import multer from "multer";
-import cloudinary from "../utils/configCloudinary.js";
 import streamifier from "streamifier";
+import { v2 as cloudinary} from 'cloudinary'
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 const uploadToCloudinary = async (req, res, next) => {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
   if (!req.file) return next();
 
   try {
