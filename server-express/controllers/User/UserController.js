@@ -149,10 +149,10 @@ const UserController = {
   // Get user profile by ID
   getUserProfile: async (req, res, next) => {
     try {
+
       const userId = req.user.userId;
       
       const user = await User.findById(userId).populate("stats").lean();
-      console.log(user);
       
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -166,45 +166,57 @@ const UserController = {
     }
   },
 
-  // Update user profile
-  updateUserProfile: async (req, res, next) => {
-    try {
-      const { id } = req.user;
-      const updates = req.body;
+  // Update user profil
 
-      const user = await User.findById(id);
-      if (!user) return res.status(404).json({ error: "User not found" });
+updateUserProfile: async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const updates = { ...req.body }; // shallow copy
 
-      if (req.file) {
-        // If user already had an avatar, delete it first
-        if (user.avatar.public_id) {
-          await cloudinary.uploader.destroy(user.avatar.public_id);
-        }
-        // Save new avatar
-        updates.avatar = {
-          public_id: req.file.filename, // Cloudinary public_id
-          url: req.file.path, // Cloudinary secure URL
-        };
-      } else if (updates.removeAvatar === "true") {
-        // Remove avatar if requested
-        if (user.avatar.public_id) {
-          await cloudinary.uploader.destroy(user.avatar.public_id);
-        }
-        updates.avatar = { public_id: null, url: null };
-      }
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-      const updatedUser = await User.findByIdAndUpdate(id, updates, {
-        new: true,
-      });
+    let newAvatar = null;
+    let oldAvatarPublicId = null;
 
-      res.json({
-        message: "Profile updated successfully",
-        user: updatedUser,
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    if (req.file) {
+      // store old avatar to delete later if needed
+      if (user.avatar?.public_id) oldAvatarPublicId = user.avatar.public_id;
+
+      // Use uploaded Cloudinary info from middleware
+      newAvatar = {
+        public_id: req.file.public_id,
+        url: req.file.cloudinaryUrl,
+      };
+      updates.avatar = newAvatar;
+    } else if (updates.removeAvatar === "true") {
+      if (user.avatar?.public_id) oldAvatarPublicId = user.avatar.public_id;
+      updates.avatar = { public_id: null, url: null };
     }
-  },
+
+    // Update the DB
+    const updatedUser = await User.findByIdAndUpdate(userId, updates, {
+      new: true,
+    });
+
+    // If DB update succeeded, remove old avatar if needed
+    if (oldAvatarPublicId) {
+      await cloudinary.uploader.destroy(oldAvatarPublicId);
+    }
+
+    res.json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    // If new avatar was uploaded but DB failed, remove the uploaded avatar
+    if (req.file?.public_id) {
+      await cloudinary.uploader.destroy(req.file.public_id);
+    }
+    next(error);
+  }
+},
+
 
   // List followers of a user
   getFollowers: async (req, res, next) => {

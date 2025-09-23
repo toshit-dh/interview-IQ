@@ -5,7 +5,10 @@ const UserApi = {
   login: (data) => axiosClient1.post("/users/login", data),
   verifyEmail: (token) => axiosClient1.get(`/users/verify-email/${token}`),
   getProfile: (id) => axiosClient1.get(`/users/${id}`),
-  updateProfile: (id, data) => axiosClient1.put(`/users/${id}`, data),
+  updateProfile: (data) =>
+    axiosClient1.put("/users/", data, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
   getFollowers: (id) => axiosClient1.get(`/users/${id}/followers`),
   getFollowing: (id) => axiosClient1.get(`/users/${id}/following`),
   follow: (id) => axiosClient1.post(`/users/${id}/follow`),

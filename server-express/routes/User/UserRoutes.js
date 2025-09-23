@@ -10,7 +10,7 @@ router.get("/verify-email/:token", UserController.verifyEmail);
 
 // Profile
 router.get("/:id", UserController.getUserProfile);
-router.put("/:id", upload.single("avatar"),uploadToCloudinary, UserController.updateUserProfile);
+router.put("/", upload.single("avatar"),uploadToCloudinary, UserController.updateUserProfile);
 
 // Social
 router.get("/:id/followers", UserController.getFollowers);
