@@ -3,6 +3,7 @@ import { Brain, Mail, Lock, User, ArrowRight, Eye, EyeOff, UserPlus, Sparkles } 
 import { useNavigate } from "react-router-dom";
 import { UserApi } from "../../api/UserApi";
 import toast, { Toaster } from 'react-hot-toast';
+import { toastStyle } from "../../utils/toastStyle";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -20,42 +21,13 @@ export default function Signup() {
 
     try {
       const res = await UserApi.register(form);
-      toast.success(res.message || "Registered successfully! Check your email.", {
-        duration: 4000,
-        position: 'bottom-left',
-        style: {
-          background: '#10B981',
-          color: '#ffffff',
-          borderRadius: '8px',
-          fontSize: '14px',
-          fontWeight: '500',
-        },
-        iconTheme: {
-          primary: '#ffffff',
-          secondary: '#10B981',
-        },
-      });
+      toast.success(res.message || "Registered successfully! Check your email.", toastStyle(true));
 
       setLoading(false);
       setTimeout(() => navigate("/login"), 3000);
     } catch (err) {
       toast.error(
-        err.response?.data?.message || "Registration failed.",
-        {
-          duration: 4000,
-          position: 'bottom-left',
-          style: {
-            background: '#EF4444',
-            color: '#ffffff',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-          },
-          iconTheme: {
-            primary: '#ffffff',
-            secondary: '#EF4444',
-          },
-        }
+        err.response?.data?.message || "Registration failed.",toastStyle(false)
       );
       setLoading(false);
     }
