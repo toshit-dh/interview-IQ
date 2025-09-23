@@ -1,26 +1,27 @@
 import React, { useState } from "react";
 import { X, Camera, User } from "lucide-react";
+import { UserApi } from "../../../api/UserApi";
+import toast, { Toaster } from "react-hot-toast";
+import { toastStyle } from "../../../utils/toastStyle";
 
-export function EditProfile ({ isOpen, onClose, userData, onSave }) {
+export function EditProfile({ isOpen, onClose, userData, onSave }) {
   const [formData, setFormData] = useState({
     username: userData?.username || "",
-    fullName: userData?.fullName || "",
+    name: userData?.name || "",
     bio:
       userData?.bio ||
       "Software engineer passionate about coding challenges and continuous learning.",
-    avatar: userData?.avatar || null,
+    avatar: null, // store actual File object
+    preview: userData?.avatar || null, // store preview URL
   });
+
+  const [loading, setLoading] = useState(false);
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
-  };
-
-  const handleSave = () => {
-    onSave(formData);
-    onClose();
   };
 
   const handleAvatarChange = (event) => {
@@ -30,10 +31,40 @@ export function EditProfile ({ isOpen, onClose, userData, onSave }) {
       reader.onload = (e) => {
         setFormData((prev) => ({
           ...prev,
-          avatar: e.target.result,
+          avatar: file, // store actual file for upload
+          preview: e.target.result, // store base64 preview
         }));
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const data = new FormData();
+      data.append("username", formData.username);
+      data.append("name", formData.name);
+      data.append("bio", formData.bio);
+      if (formData.avatar) data.append("avatar", formData.avatar);
+
+      const res = await UserApi.updateProfile(data);
+      console.log(res);
+      
+      toast.success(
+        res.message || "Profile Updated Successfully",
+        toastStyle(true)
+      );
+      onSave?.(res.user); // pass updated user to parent
+      onClose();
+    } catch (e) {
+      
+      toast.error(
+        e.response?.data?.message || "Profile Cannot Be Updated",
+        toastStyle(false)
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,9 +90,9 @@ export function EditProfile ({ isOpen, onClose, userData, onSave }) {
           <div className="flex flex-col items-center space-y-4">
             <div className="relative">
               <div className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center overflow-hidden">
-                {formData.avatar ? (
+                {formData.preview ? (
                   <img
-                    src={formData.avatar}
+                    src={formData.preview}
                     alt="Avatar"
                     className="w-full h-full object-cover"
                   />
@@ -109,8 +140,8 @@ export function EditProfile ({ isOpen, onClose, userData, onSave }) {
             </label>
             <input
               type="text"
-              value={formData.fullName}
-              onChange={(e) => handleInputChange("fullName", e.target.value)}
+              value={formData.name}
+              onChange={(e) => handleInputChange("name", e.target.value)}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               placeholder="Enter full name"
             />
@@ -139,12 +170,14 @@ export function EditProfile ({ isOpen, onClose, userData, onSave }) {
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-medium transition-all transform hover:scale-105"
+            disabled={loading}
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-medium transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Changes
+            {loading ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
+      <Toaster />
     </div>
   );
-};
+}

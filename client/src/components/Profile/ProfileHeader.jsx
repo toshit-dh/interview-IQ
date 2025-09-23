@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 export function ProfileHeader ({ userData, onEditProfile })  {
-  console.log(userData);
   
   const [expanded, setExpanded] = useState(false);
   const averageScore =
@@ -18,7 +17,7 @@ export function ProfileHeader ({ userData, onEditProfile })  {
           <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-lg overflow-hidden">
             {userData.avatar.url ? (
               <img
-                src={userData.avatar}
+                src={userData.avatar.url}
                 alt="Avatar"
                 className="w-full h-full object-cover"
               />
