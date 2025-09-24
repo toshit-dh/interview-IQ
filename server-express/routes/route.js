@@ -31,8 +31,10 @@ import interviewRoutes from "./InterviewRoutes.js";
 router.use("/interviews", interviewRoutes);
 
 // ----------------- Community Routes -----------------
-import communityRoutes from "./CommunityRoutes.js";
-router.use("/community", communityRoutes);
+import friendRoutes from "./CommunityRoutes/FriendRoutes.js";
+import discussRoutes from "./CommunityRoutes/DiscussRoutes.js"
+router.use("/friend", friendRoutes);
+router.use("/discuss",discussRoutes);
 
 // ----------------- Payment Routes -----------------
 import paymentRoutes from "./PaymentRoutes.js";

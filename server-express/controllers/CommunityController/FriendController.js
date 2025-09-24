@@ -1,6 +1,6 @@
 // controllers/CommunityController.js
 
-const CommunityController = {
+const FriendController = {
   // ---------- Friend Requests ----------
   sendFriendRequest: async (req, res, next) => {
     // TODO: Implement sending friend request
@@ -17,11 +17,6 @@ const CommunityController = {
   rejectFriendRequest: async (req, res, next) => {
     // TODO: Implement rejecting friend request
   },
-
-  // ---------- Social Activity ----------
-  getUserActivity: async (req, res, next) => {
-    // TODO: Implement fetching user activity feed
-  },
 };
 
-export default CommunityController;
+export default FriendController;

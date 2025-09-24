@@ -47,10 +47,10 @@ export default function Navbar() {
                 Explore
               </Link>
               <Link
-                to="/contest"
+                to="/interview"
                 className="text-gray-300 hover:text-white transition-colors"
               >
-                Contest
+                Interview
               </Link>
               <Link
                 to="/discuss"
