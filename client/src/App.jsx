@@ -10,6 +10,10 @@ import Profile from "./pages/Profile";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyEmail from "./pages/VerifyEmail";
+import { InterviewOPtions } from "./pages/InterviewOptions";
+import { PremiumInfo } from "./pages/PremiumInfo";
+import { DiscussPage } from "./pages/DiscussPage";
+import { ExplorePage } from "./pages/Explore";
 
 function App() {
   return (
@@ -36,6 +40,17 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/interview"
+              element={
+                <ProtectedRoute allowedRoles={["user", "admin"]}>
+                  <InterviewOPtions />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/premium" element={<PremiumInfo />} />
+            <Route path="/discuss" element={<DiscussPage />} />
+            <Route path="/explore" element={<ExplorePage />} />
           </Route>
 
           {/* Auth routes without Navbar */}
