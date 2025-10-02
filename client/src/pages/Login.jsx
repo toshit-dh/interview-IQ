@@ -35,7 +35,7 @@ export default function Login() {
       localStorage.setItem("token", res.token);
       localStorage.setItem("user", JSON.stringify(res.user));
 
-      setTimeout(() => navigate("/"), 1000);
+      setTimeout(() => navigate("/welcome"), 1000);
     } catch (err) {
       console.error(err);
       //setMessage(
