@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyEmail from "./pages/VerifyEmail";
+import Welcome from "./pages/Welcome";
 import { InterviewOPtions } from "./pages/InterviewOptions";
 import { PremiumInfo } from "./pages/PremiumInfo";
 import { DiscussPage } from "./pages/DiscussPage";
@@ -58,6 +59,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/verify-email/:token" element={<VerifyEmail />} />
+            <Route path="/welcome" element={<Welcome />} />
           </Route>
           <Route path="/home" element={<Home />} />
         </Routes>
