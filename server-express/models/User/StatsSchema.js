@@ -29,6 +29,12 @@ const statsSchema = new mongoose.Schema({
       totalScore: { type: Number, default: 0 },
       averageScore: { type: Number, default: 0 },
       badges: [{ type: mongoose.Schema.Types.ObjectId, ref: "Badge" }],
+      moduleStats: [
+        {
+          module: { type: mongoose.Schema.Types.ObjectId, ref: "Module" },
+          interviewsGiven: { type: Number, default: 0 },
+        },
+      ],
     },
   ],
 

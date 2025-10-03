@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Code,
@@ -33,6 +34,9 @@ import {
 } from "lucide-react";
 
 export function ExplorePage() {
+
+  const navigate = useNavigate();
+
   const [selectedPath, setSelectedPath] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -341,6 +345,9 @@ export function ExplorePage() {
 
           <button
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-gradient-to-r ${module.color} text-white hover:shadow-md flex items-center space-x-2`}
+            onClick={() =>
+              navigate(`/interview/${module.path_id}/${module._id}`)
+            }
           >
             <Play className="w-4 h-4" />
             <span>Start</span>
