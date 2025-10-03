@@ -1,8 +1,33 @@
 import React, { useState } from 'react';
 import { Mic, Video, Crown, Star, CheckCircle, Clock, Brain, Eye, MessageCircle, TrendingUp, Play, Settings } from 'lucide-react';
+import { useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 export function InterviewOPtions () {
+  const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState(null);
+  const { pathId, moduleId } = useParams();
+  const handleStartInterview = async () => {
+    const elem = document.documentElement; // fullscreen entire page
+
+    try {
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen();
+      } else {
+        alert(
+          "Fullscreen mode is not supported in your browser. You cannot proceed."
+        );
+        return;
+      }
+
+      navigate(`/audio/interview/${pathId}/${moduleId}`);
+    } catch (err) {
+      console.error("Fullscreen request failed:", err);
+      alert("Failed to enter fullscreen. You cannot proceed.");
+    }
+  };
 
   const InterviewCard = ({ 
     type, 
@@ -107,7 +132,9 @@ export function InterviewOPtions () {
           isPremium 
             ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-black hover:from-yellow-300 hover:to-orange-400 shadow-lg hover:shadow-xl' 
             : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-400 hover:to-pink-400'
-        }`}>
+        }`}
+        onClick={handleStartInterview}
+        >
           <Play className="w-5 h-5" />
           <span>Start {type} Interview</span>
         </button>

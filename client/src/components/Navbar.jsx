@@ -47,12 +47,6 @@ export default function Navbar() {
                 Explore
               </Link>
               <Link
-                to="/interview"
-                className="text-gray-300 hover:text-white transition-colors"
-              >
-                Interview
-              </Link>
-              <Link
                 to="/discuss"
                 className="text-gray-300 hover:text-white transition-colors"
               >

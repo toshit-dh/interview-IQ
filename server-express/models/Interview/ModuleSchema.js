@@ -9,7 +9,11 @@ const moduleSchema = new mongoose.Schema(
       ref: "Path",
       required: true,
     },
-    interviews_to_complete: { type: Number, default: 0 }, // number of interviews needed to complete module
+    interviews_to_complete: { type: Number, default: 0 },
+    icon: { type: String }, // store icon name as string
+    color: String,
+    bgColor: String,
+    textColor: String,
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
