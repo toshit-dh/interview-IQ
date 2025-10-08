@@ -11,6 +11,11 @@ const InterviewApi = {
   createFeedback: (data) => axiosClient1.post(`/interviews/feedback`, data),
   getFeedbackByInterview: (interviewId) =>
     axiosClient1.get(`/interviews/feedback/${interviewId}`),
+
+
+  //paths
+  getPaths: () => axiosClient1.get('path'),
+  getModuleOfPath: (id) => axiosClient1.get(`/module/${id}`)
 };
 
 export default InterviewApi;

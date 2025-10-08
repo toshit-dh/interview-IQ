@@ -19,16 +19,15 @@ router.use("/stats", statsRoutes);
 router.use("/badges", badgesRoutes);
 
 // ----------------- Admin Routes -----------------
-import pathRoutes from "./Admin/PathRoutes.js";
 import planRoutes from "./Admin/PlanRoutes.js";
 
-router.use("/paths", pathRoutes);
 router.use("/premium", planRoutes);
 
 // ----------------- Interview Routes -----------------
-import interviewRoutes from "./InterviewRoutes.js";
-
-router.use("/interviews", interviewRoutes);
+import pathRoutes from "./Interview/PathRoutes.js";
+import moduleRoutes from "./Interview/ModuleRoutes.js"
+router.use("/path", pathRoutes);
+router.use('/module',moduleRoutes)
 
 // ----------------- Community Routes -----------------
 import friendRoutes from "./CommunityRoutes/FriendRoutes.js";

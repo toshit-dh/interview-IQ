@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import "./ModuleSchema.js"
 
 const pathSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true }, // Name of the exam/path

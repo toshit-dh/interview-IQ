@@ -1,6 +1,6 @@
 import express from "express";
 const router = express.Router();
-import InterviewController from "../controllers/InterviewController.js";
+import InterviewController from "../../controllers/InterviewController.js";
 
 router.post("/", InterviewController.createInterview);
 router.get("/:id", InterviewController.getInterviewById);
