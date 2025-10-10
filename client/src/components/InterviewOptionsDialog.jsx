@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import * as Icons from "lucide-react";
 import { Play, X, Sparkles, Crown, Mic, Video, Zap } from "lucide-react";
 
-export default function InterviewOptionsDialog({ module, onClose }) {
+export default function InterviewOptionsDialog({ module,path, onClose }) {
   const navigate = useNavigate();
   const [difficulty, setDifficulty] = useState("");
   const [llm, setLlm] = useState("");
@@ -48,7 +48,7 @@ export default function InterviewOptionsDialog({ module, onClose }) {
   const handleStartInterview = async () => {
     if (difficulty && llm && interviewType && persona) {
           navigate(`/interview-setup`, {
-            state: { difficulty, llm, interviewType, persona, module },
+            state: { difficulty, llm, interviewType, persona, module,path },
           });
     }
   };

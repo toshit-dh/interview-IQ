@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import {useLocation,useNavigate} from 'react-router-dom'
 import {
   Mic,
   Video,
@@ -14,27 +14,37 @@ import {
   Brain,
   Target,
   XCircle,
+  Shield,
 } from "lucide-react";
+import FlaskApi from "../../api/FlaskApi";
+import toast, { Toaster } from "react-hot-toast";
+import { toastStyle } from "../../utils/toastStyle";
 
 export function InterviewSetup () {
-  // Interview configuration from state/props
-  const { difficulty, llm, interviewType, persona, module } =
-    location.state || {};
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const {difficulty,llm,interviewType,persona,module,path} = location.state || {}
+
+  // Interview configuration from state/props
   const interviewConfig = {
     difficulty,
     llm,
-    interviewType,
+    interviewType, // 'audio' or 'video'
     persona,
     module,
+    path
   };
 
   const [micPermission, setMicPermission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isCreatingInterview, setIsCreatingInterview] = useState(false);
-  const [interviewCreated, setInterviewCreated] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
+  useEffect(() => {
+    if (!difficulty || !llm || !interviewType || !persona || !module || !path) {
+      navigate("/explore");
+    }
+  }, [difficulty, llm, interviewType, persona, module, path, navigate]);
 
   // Check fullscreen status
   useEffect(() => {
@@ -69,21 +79,45 @@ export function InterviewSetup () {
 
   // Create interview with loading
   const createInterview = async () => {
-    setIsCreatingInterview(true);
-    setLoadingProgress(0);
+    if(canStart){
+      try {
+        const res = await FlaskApi.createinterview({
+          difficulty,
+          llm,
+          interviewType,
+          persona,
+          module,
+          path,
+        });
 
-    const interval = setInterval(() => {
-      setLoadingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsCreatingInterview(false);
-          setInterviewCreated(true);
-          return 100;
+        if (res.data && res.data.success === true) {
+          console.log("Interview created successfully", res.data);
+          toast.success(
+            "Interview Created Successfully. All The Best!",
+            toastStyle(true)
+          );
+          navigate('/audio-interview',{
+            state: {roomId: res.data.roomId}
+          })
+        } else {
+          console.error("Interview creation failed", res.data);
+          toast.error(
+            "Failed to create interview. Please try again.",
+            toastStyle(false)
+          );
         }
-        return prev + 20;
-      });
-    }, 1000);
+      } catch (error) {
+        navigate("/audio-interview");
+        console.error("Error creating interview:", error);
+        toast.error(
+          "An error occurred while creating the interview.",
+          toastStyle(false)
+        );
+      }
+    }
   };
+
+
 
   // Enter fullscreen
   const enterFullscreen = () => {
@@ -91,384 +125,332 @@ export function InterviewSetup () {
   };
 
   // Start interview
-  const startInterview = () => {
-    if (canStart) {
-      alert("Starting interview...");
-      // Navigate to interview screen
-    }
-  };
+  
 
   const canStart =
     isFullscreen &&
     micPermission &&
-    (interviewConfig.interviewType === "audio" || cameraPermission) &&
-    interviewCreated;
+    (interviewConfig.interviewType === "audio" || cameraPermission);
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
-            Interview Setup
-          </h1>
-          <p className="text-gray-400">
-            Complete all requirements before starting your interview
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Interview Configuration */}
-          <div className="lg:col-span-1">
-            <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-xl shadow-lg border border-purple-500/20 p-6">
-              <h2 className="text-xl font-bold text-white mb-6">
-                Interview Configuration
-              </h2>
-
-              <div className="space-y-4">
-                <div className="bg-slate-800/50 rounded-lg p-4 border border-purple-500/10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Target className="w-5 h-5 text-purple-400" />
-                      <span className="text-gray-300 text-sm">Difficulty</span>
-                    </div>
-                    <span className="text-white font-semibold">
-                      {interviewConfig.difficulty}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/50 rounded-lg p-4 border border-purple-500/10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Brain className="w-5 h-5 text-purple-400" />
-                      <span className="text-gray-300 text-sm">AI Model</span>
-                    </div>
-                    <span className="text-white font-semibold">
-                      {interviewConfig.llm}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/50 rounded-lg p-4 border border-purple-500/10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      {interviewConfig.interviewType === "audio" ? (
-                        <Mic className="w-5 h-5 text-purple-400" />
-                      ) : (
-                        <Video className="w-5 h-5 text-purple-400" />
-                      )}
-                      <span className="text-gray-300 text-sm">Type</span>
-                    </div>
-                    <span className="text-white font-semibold capitalize">
-                      {interviewConfig.interviewType}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-slate-800/50 rounded-lg p-4 border border-purple-500/10">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <User className="w-5 h-5 text-purple-400" />
-                      <span className="text-gray-300 text-sm">Persona</span>
-                    </div>
-                    <span className="text-white font-semibold text-sm">
-                      {interviewConfig.persona}
-                    </span>
-                  </div>
-                </div>
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+      <Toaster
+        position="bottom-left"
+        reverseOrder={false}
+        gutter={8}
+        containerClassName=""
+        containerStyle={{}}
+        toastOptions={{
+          className: "",
+          duration: 4000,
+          style: {
+            background: "#363636",
+            color: "#fff",
+          },
+          success: {
+            duration: 4000,
+            theme: {
+              primary: "#10B981",
+              secondary: "#ffffff",
+            },
+          },
+          error: {
+            duration: 4000,
+            theme: {
+              primary: "#EF4444",
+              secondary: "#ffffff",
+            },
+          },
+        }}
+      />
+      <div className="max-w-6xl w-full">
+        {/* Main Container */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl border border-purple-500/20 overflow-hidden">
+          {/* Header Section */}
+          <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-white mb-2">
+                  Interview System Check
+                </h1>
+                <p className="text-purple-100">
+                  Verify all requirements before starting
+                </p>
               </div>
+              <Shield className="w-16 h-16 text-white/20" />
             </div>
           </div>
 
-          {/* Middle Column - Permissions & Setup */}
-          <div className="lg:col-span-1">
-            <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-xl shadow-lg border border-purple-500/20 p-6 mb-6">
-              <h2 className="text-xl font-bold text-white mb-6">
-                System Checks
-              </h2>
+          <div className="p-8">
+            <div className="bg-slate-700/50 rounded-lg p-4 text-center gap-4 mb-8">
+              <p className="text-2xl font-bold text-white mb-2">{path.name}</p>
+              <p className="text-lg text-purple-300 font-semibold mb-3">
+                {module.name}
+              </p>
+              <p className="text-gray-300 text-sm leading-relaxed">
+                {module.description}
+              </p>
+            </div>
+            {/* Interview Details Banner */}
+            <div className="grid grid-cols-4 gap-4 mb-8">
+              <div className="bg-slate-700/50 rounded-lg p-4 text-center">
+                <Target className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                <p className="text-xs text-gray-400 mb-1">Difficulty</p>
+                <p className="text-white font-semibold">
+                  {interviewConfig.difficulty}
+                </p>
+              </div>
+              <div className="bg-slate-700/50 rounded-lg p-4 text-center">
+                <Brain className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                <p className="text-xs text-gray-400 mb-1">AI Model</p>
+                <p className="text-white font-semibold">
+                  {interviewConfig.llm}
+                </p>
+              </div>
+              <div className="bg-slate-700/50 rounded-lg p-4 text-center">
+                {interviewConfig.interviewType === "audio" ? (
+                  <Mic className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                ) : (
+                  <Video className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                )}
+                <p className="text-xs text-gray-400 mb-1">Type</p>
+                <p className="text-white font-semibold capitalize">
+                  {interviewConfig.interviewType}
+                </p>
+              </div>
+              <div className="bg-slate-700/50 rounded-lg p-4 text-center">
+                <User className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                <p className="text-xs text-gray-400 mb-1">Interviewer</p>
+                <p className="text-white font-semibold text-sm">
+                  {interviewConfig.persona}
+                </p>
+              </div>
+            </div>
 
+            {/* System Requirements Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Left: System Checks */}
               <div className="space-y-4">
-                {/* Microphone Permission */}
+                <h2 className="text-xl font-bold text-white mb-4 flex items-center">
+                  <CheckCircle className="w-5 h-5 text-purple-400 mr-2" />
+                  System Requirements
+                </h2>
+
+                {/* Microphone */}
                 <div
-                  className={`bg-slate-800/50 rounded-lg p-4 border ${
-                    micPermission
-                      ? "border-green-500/20"
-                      : "border-purple-500/10"
+                  className={`bg-slate-700/30 rounded-xl p-5 border-2 transition-all ${
+                    micPermission ? "border-green-500/50" : "border-slate-600"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
                       <div
-                        className={`w-10 h-10 ${
-                          micPermission ? "bg-green-500/20" : "bg-purple-500/20"
-                        } rounded-full flex items-center justify-center`}
+                        className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                          micPermission ? "bg-green-500/20" : "bg-slate-600/50"
+                        }`}
                       >
                         <Mic
-                          className={`w-5 h-5 ${
-                            micPermission ? "text-green-400" : "text-purple-400"
+                          className={`w-7 h-7 ${
+                            micPermission ? "text-green-400" : "text-gray-400"
                           }`}
                         />
                       </div>
                       <div>
-                        <h3 className="text-white font-semibold text-sm">
-                          Microphone
+                        <h3 className="text-white font-semibold text-lg">
+                          Microphone Access
                         </h3>
-                        <p className="text-xs text-gray-400">Required</p>
+                        <p className="text-gray-400 text-sm">
+                          Required for audio recording
+                        </p>
                       </div>
                     </div>
                     {micPermission ? (
-                      <CheckCircle className="w-6 h-6 text-green-400" />
+                      <CheckCircle className="w-8 h-8 text-green-400" />
                     ) : (
-                      <XCircle className="w-6 h-6 text-gray-500" />
+                      <button
+                        onClick={requestMicPermission}
+                        className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-all"
+                      >
+                        Allow
+                      </button>
                     )}
                   </div>
-                  {!micPermission && (
-                    <button
-                      onClick={requestMicPermission}
-                      className="w-full py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-all text-sm font-semibold"
-                    >
-                      Grant Access
-                    </button>
-                  )}
                 </div>
 
-                {/* Camera Permission */}
+                {/* Camera */}
                 {interviewConfig.interviewType === "video" && (
                   <div
-                    className={`bg-slate-800/50 rounded-lg p-4 border ${
+                    className={`bg-slate-700/30 rounded-xl p-5 border-2 transition-all ${
                       cameraPermission
-                        ? "border-green-500/20"
-                        : "border-purple-500/10"
+                        ? "border-green-500/50"
+                        : "border-slate-600"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
                         <div
-                          className={`w-10 h-10 ${
+                          className={`w-14 h-14 rounded-full flex items-center justify-center ${
                             cameraPermission
                               ? "bg-green-500/20"
-                              : "bg-pink-500/20"
-                          } rounded-full flex items-center justify-center`}
+                              : "bg-slate-600/50"
+                          }`}
                         >
                           <Video
-                            className={`w-5 h-5 ${
+                            className={`w-7 h-7 ${
                               cameraPermission
                                 ? "text-green-400"
-                                : "text-pink-400"
+                                : "text-gray-400"
                             }`}
                           />
                         </div>
                         <div>
-                          <h3 className="text-white font-semibold text-sm">
-                            Camera
+                          <h3 className="text-white font-semibold text-lg">
+                            Camera Access
                           </h3>
-                          <p className="text-xs text-gray-400">Required</p>
+                          <p className="text-gray-400 text-sm">
+                            Required for video recording
+                          </p>
                         </div>
                       </div>
                       {cameraPermission ? (
-                        <CheckCircle className="w-6 h-6 text-green-400" />
+                        <CheckCircle className="w-8 h-8 text-green-400" />
                       ) : (
-                        <XCircle className="w-6 h-6 text-gray-500" />
+                        <button
+                          onClick={requestCameraPermission}
+                          className="px-5 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-semibold transition-all"
+                        >
+                          Allow
+                        </button>
                       )}
                     </div>
-                    {!cameraPermission && (
-                      <button
-                        onClick={requestCameraPermission}
-                        className="w-full py-2 bg-pink-500/20 text-pink-400 rounded-lg hover:bg-pink-500/30 transition-all text-sm font-semibold"
-                      >
-                        Grant Access
-                      </button>
-                    )}
                   </div>
                 )}
 
                 {/* Fullscreen */}
                 <div
-                  className={`bg-slate-800/50 rounded-lg p-4 border ${
-                    isFullscreen
-                      ? "border-green-500/20"
-                      : "border-purple-500/10"
+                  className={`bg-slate-700/30 rounded-xl p-5 border-2 transition-all ${
+                    isFullscreen ? "border-green-500/50" : "border-slate-600"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
                       <div
-                        className={`w-10 h-10 ${
-                          isFullscreen ? "bg-green-500/20" : "bg-blue-500/20"
-                        } rounded-full flex items-center justify-center`}
+                        className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                          isFullscreen ? "bg-green-500/20" : "bg-slate-600/50"
+                        }`}
                       >
                         <Maximize
-                          className={`w-5 h-5 ${
-                            isFullscreen ? "text-green-400" : "text-blue-400"
+                          className={`w-7 h-7 ${
+                            isFullscreen ? "text-green-400" : "text-gray-400"
                           }`}
                         />
                       </div>
                       <div>
-                        <h3 className="text-white font-semibold text-sm">
-                          Fullscreen
+                        <h3 className="text-white font-semibold text-lg">
+                          Fullscreen Mode
                         </h3>
-                        <p className="text-xs text-gray-400">Required</p>
-                      </div>
-                    </div>
-                    {isFullscreen ? (
-                      <CheckCircle className="w-6 h-6 text-green-400" />
-                    ) : (
-                      <XCircle className="w-6 h-6 text-gray-500" />
-                    )}
-                  </div>
-                  {!isFullscreen && (
-                    <button
-                      onClick={enterFullscreen}
-                      className="w-full py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all text-sm font-semibold"
-                    >
-                      Enable Fullscreen
-                    </button>
-                  )}
-                </div>
-
-                {/* Interview Creation */}
-                <div
-                  className={`bg-slate-800/50 rounded-lg p-4 border ${
-                    interviewCreated
-                      ? "border-green-500/20"
-                      : "border-purple-500/10"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className={`w-10 h-10 ${
-                          interviewCreated
-                            ? "bg-green-500/20"
-                            : "bg-purple-500/20"
-                        } rounded-full flex items-center justify-center`}
-                      >
-                        {isCreatingInterview ? (
-                          <Loader className="w-5 h-5 text-purple-400 animate-spin" />
-                        ) : interviewCreated ? (
-                          <CheckCircle className="w-5 h-5 text-green-400" />
-                        ) : (
-                          <Clock className="w-5 h-5 text-purple-400" />
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="text-white font-semibold text-sm">
-                          Interview Setup
-                        </h3>
-                        <p className="text-xs text-gray-400">
-                          {isCreatingInterview
-                            ? "Creating..."
-                            : interviewCreated
-                            ? "Ready"
-                            : "Pending"}
+                        <p className="text-gray-400 text-sm">
+                          Mandatory for security
                         </p>
                       </div>
                     </div>
-                    {interviewCreated && (
-                      <CheckCircle className="w-6 h-6 text-green-400" />
+                    {isFullscreen ? (
+                      <CheckCircle className="w-8 h-8 text-green-400" />
+                    ) : (
+                      <button
+                        onClick={enterFullscreen}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-all"
+                      >
+                        Enable
+                      </button>
                     )}
                   </div>
+                </div>
+              </div>
 
-                  {isCreatingInterview && (
-                    <div className="space-y-2">
-                      <div className="w-full bg-slate-700 rounded-full h-2">
-                        <div
-                          className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${loadingProgress}%` }}
-                        ></div>
+              {/* Right: Instructions & Start */}
+              <div className="space-y-6">
+                <h2 className="text-xl font-bold text-white mb-4 flex items-center">
+                  <AlertCircle className="w-5 h-5 text-yellow-400 mr-2" />
+                  Important Instructions
+                </h2>
+
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6">
+                  <ul className="space-y-4">
+                    <li className="flex items-start space-x-3">
+                      <Lock className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-white font-medium">
+                          No Tab Switching
+                        </p>
+                        <p className="text-gray-400 text-sm">
+                          Stay on this page throughout the interview
+                        </p>
                       </div>
-                      <p className="text-xs text-purple-400 text-center">
-                        {loadingProgress}%
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Maximize className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-white font-medium">
+                          Fullscreen Required
+                        </p>
+                        <p className="text-gray-400 text-sm">
+                          Must remain in fullscreen mode
+                        </p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Mic className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-white font-medium">Clear Audio</p>
+                        <p className="text-gray-400 text-sm">
+                          Speak clearly in a quiet environment
+                        </p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Clock className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-white font-medium">Auto Recording</p>
+                        <p className="text-gray-400 text-sm">
+                          Interview is automatically recorded & analyzed
+                        </p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Start Button */}
+                <div className="space-y-4">
+                  <button
+                    onClick={createInterview}
+                    disabled={!canStart}
+                    className={`w-full py-5 rounded-xl font-bold text-lg transition-all flex items-center justify-center space-x-3 ${
+                      canStart
+                        ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 shadow-lg shadow-green-500/50 transform hover:scale-105"
+                        : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    <Play className="w-6 h-6" />
+                    <span>Start Interview</span>
+                  </button>
+
+                  {!canStart && (
+                    <div className="bg-slate-700/30 rounded-lg p-4 text-center">
+                      <p className="text-gray-400 text-sm">
+                        Complete all system checks above to proceed
                       </p>
                     </div>
                   )}
 
-                  {!interviewCreated && !isCreatingInterview && (
-                    <button
-                      onClick={createInterview}
-                      disabled={
-                        !micPermission ||
-                        (interviewConfig.interviewType === "video" &&
-                          !cameraPermission)
-                      }
-                      className={`w-full py-2 rounded-lg transition-all text-sm font-semibold ${
-                        micPermission &&
-                        (interviewConfig.interviewType === "audio" ||
-                          cameraPermission)
-                          ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
-                          : "bg-gray-600/20 text-gray-500 cursor-not-allowed"
-                      }`}
-                    >
-                      Create Interview
-                    </button>
+                  {canStart && (
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-center">
+                      <p className="text-green-400 font-semibold">
+                        ✓ All systems ready! Click to begin
+                      </p>
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column - Instructions & Start */}
-          <div className="lg:col-span-1">
-            <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-xl shadow-lg border border-purple-500/20 p-6">
-              <h2 className="text-xl font-bold text-white mb-6">
-                Instructions
-              </h2>
-
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 mb-6">
-                <h3 className="text-yellow-400 font-semibold mb-3 flex items-center text-sm">
-                  <AlertCircle className="w-4 h-4 mr-2" />
-                  Important Guidelines
-                </h3>
-                <ul className="space-y-3 text-gray-300 text-sm">
-                  <li className="flex items-start space-x-2">
-                    <Lock className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <span>Do not exit fullscreen during interview</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <Maximize className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <span>Keep browser window maximized</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <Mic className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <span>Speak clearly and audibly</span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <span>Interview will be recorded & analyzed</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="space-y-4">
-                <button
-                  onClick={startInterview}
-                  disabled={!canStart}
-                  className={`w-full py-4 rounded-lg font-semibold transition-all flex items-center justify-center space-x-2 ${
-                    canStart
-                      ? "bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 cursor-pointer shadow-lg"
-                      : "bg-gray-600 text-gray-400 cursor-not-allowed"
-                  }`}
-                >
-                  <Play className="w-5 h-5" />
-                  <span>Start Interview</span>
-                </button>
-
-                {!canStart && (
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-purple-500/10">
-                    <p className="text-sm text-gray-400 text-center">
-                      Complete all system checks to start
-                    </p>
-                  </div>
-                )}
-
-                {canStart && (
-                  <div className="bg-green-500/10 rounded-lg p-4 border border-green-500/20">
-                    <p className="text-sm text-green-400 text-center font-semibold">
-                      ✓ All systems ready! You can start now
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           </div>

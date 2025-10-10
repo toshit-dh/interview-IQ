@@ -44,7 +44,7 @@ function App() {
               }
             />
             <Route
-              path="/audio/interview/:pathId/:moduleId"
+              path="/audio-interview"
               element={
                 <ProtectedRoute allowedRoles={["user", "admin"]}>
                   <AudioInterview />

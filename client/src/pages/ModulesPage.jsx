@@ -88,6 +88,7 @@ export default function ModulePage() {
         {showDialog && selectedModule && (
           <InterviewOptionsDialog
             module={selectedModule}
+            path={path}
             onClose={() => setShowDialog(false)}
           />
         )}
