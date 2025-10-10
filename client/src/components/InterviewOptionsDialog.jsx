@@ -45,12 +45,11 @@ export default function InterviewOptionsDialog({ module, onClose }) {
       description: "Challenging and thorough",
     },
   ];
-
-  const handleStartInterview = () => {
+  const handleStartInterview = async () => {
     if (difficulty && llm && interviewType && persona) {
-      navigate(`/interview/${module.path_id}/${module._id}`, {
-        state: { difficulty, llm, interviewType, persona },
-      });
+          navigate(`/interview-setup`, {
+            state: { difficulty, llm, interviewType, persona, module },
+          });
     }
   };
 
@@ -80,7 +79,7 @@ export default function InterviewOptionsDialog({ module, onClose }) {
           </button>
         </div>
 
-        <div className="p-8 space-y-8 overflow-y-auto max-h-[calc(95vh-140px)]">
+        <div className="p-8 space-y-8 overflow-y-auto max-h-[calc(95vh-140px)] custom-scrollbar">
           {/* Difficulty Level */}
           <div className="space-y-4">
             <div className="flex items-center space-x-3">

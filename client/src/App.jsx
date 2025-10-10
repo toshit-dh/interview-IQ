@@ -11,12 +11,12 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyEmail from "./pages/VerifyEmail";
 import Welcome from "./pages/Welcome";
-import { InterviewOPtions } from "./pages/InterviewOptions";
 import { PremiumInfo } from "./pages/PremiumInfo";
 import { DiscussPage } from "./pages/DiscussPage";
 import { ExplorePage } from "./pages/Explore";
 import { AudioInterview } from "./pages/AudioInterview";
 import ModulePage from "./pages/ModulesPage";
+import { InterviewSetup } from "./pages/InterviewSetup";
 
 function App() {
   return (
@@ -44,14 +44,6 @@ function App() {
               }
             />
             <Route
-              path="/interview/:pathId/:moduleId"
-              element={
-                <ProtectedRoute allowedRoles={["user", "admin"]}>
-                  <InterviewOPtions />
-                </ProtectedRoute>
-              }
-            />
-            <Route
               path="/audio/interview/:pathId/:moduleId"
               element={
                 <ProtectedRoute allowedRoles={["user", "admin"]}>
@@ -59,6 +51,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/interview-setup" element={<InterviewSetup/>}/>
             <Route path="/premium" element={<PremiumInfo />} />
             <Route path="/discuss" element={<DiscussPage />} />
             <Route path="/explore" element={<ExplorePage />} />
