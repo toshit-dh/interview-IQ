@@ -23,17 +23,30 @@ export function InterviewSetup() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { difficulty, llm, interviewType, persona, module, path } =
+  const {
+        difficulty,
+        llm,
+        interviewType,
+        persona,
+        module,
+        path,
+        pdfMode,
+        pdfFile,
+        pdfContainsAnswers,
+      } =
     location.state || {};
 
   // Interview configuration from state/props
   const interviewConfig = {
     difficulty,
     llm,
-    interviewType, // 'audio' or 'video'
+    interviewType,
     persona,
     module,
     path,
+    pdfMode,
+    pdfFile,
+    pdfContainsAnswers
   };
 
   const [micPermission, setMicPermission] = useState(false);
@@ -80,14 +93,7 @@ export function InterviewSetup() {
   const createInterview = async () => {
   if (canStart) {
     try {
-      const res = await FlaskApi.createinterview({
-        difficulty,
-        llm,
-        interviewType,
-        persona,
-        module,
-        path,
-      });
+      const res = await FlaskApi.createinterview(interviewConfig);
 
       if (res.data && res.data.success === true) {
         toast.success(
