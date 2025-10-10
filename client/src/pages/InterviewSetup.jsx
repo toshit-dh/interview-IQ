@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from "react";
-import {useLocation,useNavigate} from 'react-router-dom'
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Mic,
   Video,
   CheckCircle,
   AlertCircle,
-  Loader,
   Play,
   Maximize,
   Lock,
@@ -13,19 +12,19 @@ import {
   User,
   Brain,
   Target,
-  XCircle,
   Shield,
 } from "lucide-react";
+import { connectSocket } from "../services/socket";
 import FlaskApi from "../../api/FlaskApi";
 import toast, { Toaster } from "react-hot-toast";
 import { toastStyle } from "../../utils/toastStyle";
 
-export function InterviewSetup () {
-
+export function InterviewSetup() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const {difficulty,llm,interviewType,persona,module,path} = location.state || {}
+  const { difficulty, llm, interviewType, persona, module, path } =
+    location.state || {};
 
   // Interview configuration from state/props
   const interviewConfig = {
@@ -34,7 +33,7 @@ export function InterviewSetup () {
     interviewType, // 'audio' or 'video'
     persona,
     module,
-    path
+    path,
   };
 
   const [micPermission, setMicPermission] = useState(false);
@@ -79,44 +78,56 @@ export function InterviewSetup () {
 
   // Create interview with loading
   const createInterview = async () => {
-    if(canStart){
-      try {
-        const res = await FlaskApi.createinterview({
-          difficulty,
-          llm,
-          interviewType,
-          persona,
-          module,
-          path,
-        });
+  if (canStart) {
+    try {
+      const res = await FlaskApi.createinterview({
+        difficulty,
+        llm,
+        interviewType,
+        persona,
+        module,
+        path,
+      });
 
-        if (res.data && res.data.success === true) {
-          console.log("Interview created successfully", res.data);
-          toast.success(
-            "Interview Created Successfully. All The Best!",
-            toastStyle(true)
-          );
-          navigate('/audio-interview',{
-            state: {roomId: res.data.roomId}
-          })
-        } else {
-          console.error("Interview creation failed", res.data);
-          toast.error(
-            "Failed to create interview. Please try again.",
-            toastStyle(false)
-          );
-        }
-      } catch (error) {
-        navigate("/audio-interview");
-        console.error("Error creating interview:", error);
-        toast.error(
-          "An error occurred while creating the interview.",
-          toastStyle(false)
+      if (res.data && res.data.success === true) {
+        toast.success(
+          "Interview Created Successfully. Waiting for interviewer to join.",
+          toastStyle(true)
         );
-      }
-    }
-  };
 
+        const socket = connectSocket();
+
+        socket.on("connect", () => {
+          console.log("✅ Socket connected");
+
+          // Listen first for server confirmation
+          socket.on("interviewerJoinedRoom", (data) => {
+            console.log("📩 Server joined room:", data);
+            toast.success("Interviewer Joined. All The Best!", toastStyle(true));
+
+            navigate("/audio-interview", {
+              state: {
+                roomId: res.data.roomId,
+                path: path.name,
+                module: module.name,
+                socket, // pass socket
+              },
+            });
+          });
+
+          // Now emit joinRoom
+          socket.emit("joinRoom", res.data.roomId);
+        });
+      } else {
+        console.error("Interview creation failed", res.data);
+        toast.error("Failed to create interview. Please try again.", toastStyle(false));
+      }
+    } catch (error) {
+      console.error("Error creating interview:", error);
+      toast.error("An error occurred while creating the interview.", toastStyle(false));
+    }
+  }
+};
 
 
   // Enter fullscreen
@@ -125,7 +136,6 @@ export function InterviewSetup () {
   };
 
   // Start interview
-  
 
   const canStart =
     isFullscreen &&
@@ -458,5 +468,4 @@ export function InterviewSetup () {
       </div>
     </div>
   );
-};
-
+}

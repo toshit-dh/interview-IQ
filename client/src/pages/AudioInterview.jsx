@@ -1,10 +1,7 @@
-import React, { useState, useEffect,useRef} from "react";
-import {
-  User,
-  Bot,
-} from "lucide-react";
-import { socket } from "../services/socket";
-import { useNavigate,useLocation } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { User, Bot } from "lucide-react";
+import { disconnectSocket } from "../services/socket";
+import { useNavigate, useLocation } from "react-router-dom";
 import TopBar from "../components/AudioInterview/TopBar";
 import WaveCircle from "../components/AudioInterview/WaveCircle";
 import AIInsightsPanel from "../components/AudioInterview/AIInsightsPanel";
@@ -16,17 +13,20 @@ import InterviewCancelledModal from "../components/AudioInterview/InterviewCance
 export function AudioInterview() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { roomId } = location.state || {};
+  const { roomId, path, module,socket } = location.state || {};
+
+  // --- Refs ---
+  const mediaRecorderRef = useRef(null);
+  const startTimeRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // --- States ---
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showCancelledModal, setShowCancelledModal] = useState(false);
-  const [insights, setInsights] = useState([
-    { insightType: "clarity", text: "Speak clearly and at a moderate pace" },
-    {
-      insightType: "fillerWords",
-      text: "Avoid filler words like 'um' and 'uh'",
-    },
+  const [duration, setDuration] = useState("00:00");
+  const [insights,setInsights] = useState([
     { insightType: "pause", text: "Take a brief pause before answering" },
     {
       insightType: "examples",
@@ -35,23 +35,29 @@ export function AudioInterview() {
     { insightType: "confidence", text: "Maintain a confident tone throughout" },
   ]);
 
-  const mediaRecorderRef = useRef(null);
+  // --- Helper: format seconds to mm:ss ---
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const secs = (seconds % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
 
+  // --- Handle exiting fullscreen ---
   useEffect(() => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
         setShowCancelledModal(true);
-        setTimeout(() => {
-          navigate("/");
-        }, 3000);
+        setTimeout(() => navigate("/"), 3000);
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => {
+    return () =>
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    };
-  }, []);
+  }, [navigate]);
 
+  // --- Demo: toggle AI speaking animation ---
   useEffect(() => {
     const interval = setInterval(() => {
       setIsInterviewerSpeaking((prev) => !prev);
@@ -59,35 +65,37 @@ export function AudioInterview() {
     return () => clearInterval(interval);
   }, []);
 
+  // --- Connect to socket once ---
   useEffect(() => {
-    // Connect to socket
-    checkMicrophonePermission();
-    startRecording();
-    socket.connect();
-
-    socket.on("connect", () => {
-      console.log("Connected to backend via WebSocket");
-      socket.emit("joinRoom", { roomId });
+    if(!socket || !roomId) return;
+    socket.emit("joinRoom",roomId)
+    socket.on("insights", (newInsight) => {
+      setInsights((prev) => [...prev, newInsight]); 
     });
-
-    socket.on("insights", (data) => {
-      console.log("Insights received:", data);
-      setInsights((prev) => [...prev, ...data]);
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Disconnected from backend");
-    });
-
     return () => {
-      socket.emit("leaveRoom", { roomId }); // Optional but clean
-      socket.off("connect");
-      socket.off("insights");
-      socket.off("disconnect");
+      disconnectSocket();
     };
-  }, [roomId, navigate]);
+  }, []);
 
+  // --- Interview Timer (optimized) ---
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    let lastSeconds = 0;
 
+    timerRef.current = setInterval(() => {
+      const elapsedSeconds = Math.floor(
+        (Date.now() - startTimeRef.current) / 1000
+      );
+      if (elapsedSeconds !== lastSeconds) {
+        setDuration(formatTime(elapsedSeconds));
+        lastSeconds = elapsedSeconds;
+      }
+    }, 500);
+
+    return () => clearInterval(timerRef.current);
+  }, []);
+
+  // --- Audio recording ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -96,14 +104,14 @@ export function AudioInterview() {
       });
 
       mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
-        if (event.data.size > 0) {
-          socket.emit("audio-chunk", event.data);
+        if (event.data.size > 0 && socket) {
+          socket.current.emit("audio-chunk", event.data);
         }
       });
 
       mediaRecorderRef.current.start(1000); // send chunk every 1s
     } catch (err) {
-      console.error("Error starting recording:", err);
+      console.error("🎙️ Error starting recording:", err);
     }
   };
 
@@ -111,9 +119,11 @@ export function AudioInterview() {
     mediaRecorderRef.current?.stop();
   };
 
+  // --- Render ---
   return (
     <div className="fixed inset-0 bg-slate-900 overflow-hidden">
       <TopBar onEndClick={() => setShowEndConfirm(true)} />
+
       <div className="h-full pt-16 pb-32 flex items-center justify-center">
         <div className="flex items-center justify-center space-x-32">
           <WaveCircle
@@ -130,18 +140,23 @@ export function AudioInterview() {
           />
         </div>
       </div>
+
       <AIInsightsPanel insights={insights} />
+
       <CurrentQuestionDisplay
         questionNumber={3}
         totalQuestions={10}
-        questionText="Tell me about a time when you had to work with a difficult team
-            member. How did you handle the situation?"
+        questionText="Tell me about a time when you had to work with a difficult team member. How did you handle the situation?"
       />
+
+      {/* ⏱ Duration auto-updating every second */}
       <InterviewInfoPanel
-        duration="12:34"
+        duration={duration}
         questionCount="3/10"
-        path="Frontend"
+        path={path}
+        module={module}
       />
+
       {showEndConfirm && (
         <EndInterviewModal onCancel={() => setShowEndConfirm(false)} />
       )}
