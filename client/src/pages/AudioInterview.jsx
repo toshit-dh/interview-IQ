@@ -4,7 +4,7 @@ import {
   Bot,
 } from "lucide-react";
 import { socket } from "../services/socket";
-import { useNavigate } from "react-router-dom";
+import { useNavigate,useLocation } from "react-router-dom";
 import TopBar from "../components/AudioInterview/TopBar";
 import WaveCircle from "../components/AudioInterview/WaveCircle";
 import AIInsightsPanel from "../components/AudioInterview/AIInsightsPanel";
@@ -15,6 +15,8 @@ import InterviewCancelledModal from "../components/AudioInterview/InterviewCance
 
 export function AudioInterview() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { roomId } = location.state || {};
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -60,14 +62,17 @@ export function AudioInterview() {
   useEffect(() => {
     // Connect to socket
     checkMicrophonePermission();
+    startRecording();
+    socket.connect();
+
     socket.on("connect", () => {
       console.log("Connected to backend via WebSocket");
-      // checkMicrophonePermission()
+      socket.emit("joinRoom", { roomId });
     });
 
     socket.on("insights", (data) => {
       console.log("Insights received:", data);
-      setInsights(data);
+      setInsights((prev) => [...prev, ...data]);
     });
 
     socket.on("disconnect", () => {
@@ -75,42 +80,13 @@ export function AudioInterview() {
     });
 
     return () => {
+      socket.emit("leaveRoom", { roomId }); // Optional but clean
       socket.off("connect");
       socket.off("insights");
       socket.off("disconnect");
     };
-  }, []);
+  }, [roomId, navigate]);
 
-  
-  const checkMicrophonePermission = async () => {
-    try {
-      const result = await navigator.permissions.query({ name: "microphone" });
-      console.log("Microphone permission state:", result.state);
-
-      if (result.state === "granted") {
-        startRecording();
-      } else if (result.state === "prompt") {
-        requestMicrophoneAccess();
-      } else {
-        alert(
-          "Microphone access denied. Please enable it in browser settings."
-        );
-      }
-    } catch (err) {
-      console.error("Permission check error:", err);
-    }
-  };
-
-  const requestMicrophoneAccess = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log("Microphone access granted", stream);
-      startRecording(stream);
-    } catch (err) {
-      console.error("Microphone access denied", err);
-      setShowCancelledModal(true)
-    }
-  };
 
   const startRecording = async () => {
     try {
