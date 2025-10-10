@@ -1,11 +1,34 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import * as Icons from "lucide-react";
-import { Play, X, Sparkles, Crown, Mic, Video, Zap } from "lucide-react";
+import {
+  Play,
+  X,
+  Sparkles,
+  Crown,
+  Mic,
+  Video,
+  Zap,
+  FileText,
+  Upload,
+  AlertTriangle,
+  CheckSquare,
+  Square,
+  TrendingUp,
+  Cpu,
+  Radio,
+  Users,
+  MessageSquare,
+  Gem,
+  Drama,
+  UserCircle,
+  Heart,
+  AlertCircle,
+} from "lucide-react";
 
-export default function InterviewOptionsDialog({ module,path, onClose }) {
-  const navigate = useNavigate();
+export default function InterviewOptionsDialog({ module, path, onClose }) {
   const [difficulty, setDifficulty] = useState("");
+  const [pdfModeEnabled, setPdfModeEnabled] = useState(false);
+  const [uploadedPdf, setUploadedPdf] = useState(null);
+  const [pdfContainsAnswers, setPdfContainsAnswers] = useState(false);
   const [llm, setLlm] = useState("");
   const [interviewType, setInterviewType] = useState("");
   const [persona, setPersona] = useState("");
@@ -13,47 +36,77 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
   const difficulties = ["Easy", "Medium", "Hard", "Expert"];
 
   const llms = [
-    { name: "ChatGPT", icon: "MessageSquare" },
-    { name: "Claude", icon: "Sparkles" },
-    { name: "Gemini", icon: "Gem" },
-    { name: "Llama", icon: "Drama" },
+    { name: "ChatGPT", icon: MessageSquare },
+    { name: "Claude", icon: Sparkles },
+    { name: "Gemini", icon: Gem },
+    { name: "Llama", icon: Drama },
   ];
 
   const personas = [
     {
       id: "professional_man",
       name: "Professional Man",
-      icon: "UserCircle",
+      icon: UserCircle,
       description: "Formal and detail-oriented",
     },
     {
       id: "professional_woman",
       name: "Professional Woman",
-      icon: "UserCircle2",
+      icon: UserCircle,
       description: "Structured and analytical",
     },
     {
       id: "friendly_mentor",
       name: "Friendly Mentor",
-      icon: "Heart",
+      icon: Heart,
       description: "Supportive and encouraging",
     },
     {
       id: "strict_interviewer",
       name: "Strict Interviewer",
-      icon: "AlertCircle",
+      icon: AlertCircle,
       description: "Challenging and thorough",
     },
   ];
-  const handleStartInterview = async () => {
-    if (difficulty && llm && interviewType && persona) {
-          navigate(`/interview-setup`, {
-            state: { difficulty, llm, interviewType, persona, module,path },
-          });
+
+  const handlePdfUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === "application/pdf") {
+      setUploadedPdf(file);
+    } else {
+      alert("Please upload a valid PDF file");
     }
   };
 
-  const isFormComplete = difficulty && llm && interviewType && persona;
+  const handleStartInterview = async () => {
+    const isValid =
+      difficulty &&
+      interviewType &&
+      persona &&
+      (!pdfModeEnabled || uploadedPdf) &&
+      (pdfModeEnabled && pdfContainsAnswers ? true : llm);
+
+    if (isValid) {
+      navigate(`/interview-setup`,{
+        difficulty,
+        llm: pdfModeEnabled && pdfContainsAnswers ? "PDF" : llm,
+        interviewType,
+        persona,
+        module,
+        path,
+        pdfMode: pdfModeEnabled,
+        pdfFile: uploadedPdf,
+        pdfContainsAnswers,
+      });
+    }
+  };
+
+  const isFormComplete =
+    difficulty &&
+    interviewType &&
+    persona &&
+    (!pdfModeEnabled || uploadedPdf) &&
+    (pdfModeEnabled && pdfContainsAnswers ? true : llm);
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
@@ -79,12 +132,12 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
           </button>
         </div>
 
-        <div className="p-8 space-y-8 overflow-y-auto max-h-[calc(95vh-140px)] custom-scrollbar">
+        <div className="p-8 space-y-8 overflow-y-auto max-h-[calc(95vh-140px)]">
           {/* Difficulty Level */}
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600/30 to-purple-800/30 flex items-center justify-center border border-purple-500/30">
-                <Icons.TrendingUp className="w-6 h-6 text-purple-400" />
+                <TrendingUp className="w-6 h-6 text-purple-400" />
               </div>
               <label className="text-2xl font-bold text-white">
                 Difficulty Level
@@ -107,42 +160,161 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
             </div>
           </div>
 
-          {/* LLM Selection */}
+          {/* PDF Q&A Mode */}
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600/30 to-blue-800/30 flex items-center justify-center border border-blue-500/30">
-                <Icons.Cpu className="w-6 h-6 text-blue-400" />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-600/30 to-orange-800/30 flex items-center justify-center border border-orange-500/30">
+                <FileText className="w-6 h-6 text-orange-400" />
               </div>
               <label className="text-2xl font-bold text-white">
-                Evaluation AI Model
+                PDF Q&A Interview Mode
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {llms.map((model) => {
-                const LlmIcon = Icons[model.icon];
-                return (
+
+            {/* Enable PDF Mode Checkbox */}
+            <button
+              onClick={() => {
+                setPdfModeEnabled(!pdfModeEnabled);
+                if (pdfModeEnabled) {
+                  setUploadedPdf(null);
+                  setPdfContainsAnswers(false);
+                }
+              }}
+              className="flex items-center space-x-3 p-4 bg-slate-700/60 hover:bg-slate-600/80 rounded-xl transition-all border border-slate-600/50 w-full text-left"
+            >
+              {pdfModeEnabled ? (
+                <CheckSquare className="w-6 h-6 text-purple-400 flex-shrink-0" />
+              ) : (
+                <Square className="w-6 h-6 text-gray-400 flex-shrink-0" />
+              )}
+              <span className="text-white font-semibold">
+                Enable PDF Q&A Interview Mode?
+              </span>
+            </button>
+
+            {pdfModeEnabled && (
+              <div className="space-y-4 pl-4 border-l-2 border-purple-500/30">
+                {/* Disclaimer */}
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-yellow-300 font-semibold text-sm mb-2">
+                        Important Disclaimer
+                      </p>
+                      <p className="text-gray-300 text-xs leading-relaxed">
+                        The PDF Q&A Interview Mode extracts questions and
+                        answers based on the content of your uploaded PDF. We do
+                        not guarantee the accuracy or completeness of the
+                        extracted questions or answers. If the PDF contains
+                        incorrect or incomplete information, the results may be
+                        affected. The PDF must contain the content of the
+                        selected module or path; otherwise, your submission may
+                        be rejected. Please review carefully before proceeding.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PDF Upload */}
+                <div className="bg-slate-700/40 rounded-xl p-6 border-2 border-dashed border-slate-600/50 hover:border-purple-500/50 transition-all">
+                  <label className="cursor-pointer block">
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={handlePdfUpload}
+                      className="hidden"
+                    />
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="w-16 h-16 rounded-full bg-purple-500/20 flex items-center justify-center">
+                        <Upload className="w-8 h-8 text-purple-400" />
+                      </div>
+                      {uploadedPdf ? (
+                        <>
+                          <p className="text-green-400 font-semibold">
+                            {uploadedPdf.name}
+                          </p>
+                          <p className="text-sm text-gray-400">
+                            Click to change file
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-white font-semibold">
+                            Upload PDF File
+                          </p>
+                          <p className="text-sm text-gray-400">
+                            Click to browse or drag and drop
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </label>
+                </div>
+
+                {/* PDF Contains Answers Checkbox */}
+                {uploadedPdf && (
                   <button
-                    key={model.name}
-                    onClick={() => setLlm(model.name)}
-                    className={`py-6 px-6 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center space-x-3 transform ${
-                      llm === model.name
-                        ? "bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-xl shadow-purple-500/40 scale-105 border-2 border-purple-400"
-                        : "bg-slate-700/60 text-gray-300 hover:bg-slate-600/80 hover:scale-102 border border-slate-600/50"
-                    }`}
+                    onClick={() => setPdfContainsAnswers(!pdfContainsAnswers)}
+                    className="flex items-center space-x-3 p-4 bg-slate-700/60 hover:bg-slate-600/80 rounded-xl transition-all border border-slate-600/50 w-full text-left"
                   >
-                    {LlmIcon && <LlmIcon className="w-6 h-6" />}
-                    <span className="text-lg">{model.name}</span>
+                    {pdfContainsAnswers ? (
+                      <CheckSquare className="w-6 h-6 text-purple-400 flex-shrink-0" />
+                    ) : (
+                      <Square className="w-6 h-6 text-gray-400 flex-shrink-0" />
+                    )}
+                    <div className="text-left">
+                      <p className="text-white font-semibold">
+                        This PDF contains answers
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Skip AI model selection
+                      </p>
+                    </div>
                   </button>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* LLM Selection - Hidden if PDF contains answers */}
+          {!(pdfModeEnabled && pdfContainsAnswers) && (
+            <div className="space-y-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600/30 to-blue-800/30 flex items-center justify-center border border-blue-500/30">
+                  <Cpu className="w-6 h-6 text-blue-400" />
+                </div>
+                <label className="text-2xl font-bold text-white">
+                  Evaluation AI Model
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {llms.map((model) => {
+                  const LlmIcon = model.icon;
+                  return (
+                    <button
+                      key={model.name}
+                      onClick={() => setLlm(model.name)}
+                      className={`py-6 px-6 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center space-x-3 transform ${
+                        llm === model.name
+                          ? "bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-xl shadow-purple-500/40 scale-105 border-2 border-purple-400"
+                          : "bg-slate-700/60 text-gray-300 hover:bg-slate-600/80 hover:scale-102 border border-slate-600/50"
+                      }`}
+                    >
+                      <LlmIcon className="w-6 h-6" />
+                      <span className="text-lg">{model.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Interview Type */}
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-600/30 to-cyan-800/30 flex items-center justify-center border border-cyan-500/30">
-                <Icons.Radio className="w-6 h-6 text-cyan-400" />
+                <Radio className="w-6 h-6 text-cyan-400" />
               </div>
               <label className="text-2xl font-bold text-white">
                 Interview Type
@@ -210,7 +382,7 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-600/30 to-pink-800/30 flex items-center justify-center border border-pink-500/30">
-                <Icons.Users className="w-6 h-6 text-pink-400" />
+                <Users className="w-6 h-6 text-pink-400" />
               </div>
               <label className="text-2xl font-bold text-white">
                 Interviewer Persona
@@ -218,7 +390,7 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
             </div>
             <div className="grid grid-cols-2 gap-4">
               {personas.map((p) => {
-                const PersonaIcon = Icons[p.icon];
+                const PersonaIcon = p.icon;
                 return (
                   <button
                     key={p.id}
@@ -230,7 +402,7 @@ export default function InterviewOptionsDialog({ module,path, onClose }) {
                     }`}
                   >
                     <div className="flex items-center space-x-3 mb-2">
-                      {PersonaIcon && <PersonaIcon className="w-6 h-6" />}
+                      <PersonaIcon className="w-6 h-6" />
                       <span className="font-bold text-lg">{p.name}</span>
                     </div>
                     <p className="text-sm opacity-90">{p.description}</p>
