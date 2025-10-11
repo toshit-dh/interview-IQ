@@ -55,6 +55,7 @@ export function InterviewSetup() {
   const [micPermission, setMicPermission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [creatingInterview, setCreatingInterview] = useState(false);
   useEffect(() => {
     if (!difficulty || !llm || !interviewType || !persona || !module || !path) {
       navigate("/explore");
@@ -96,6 +97,7 @@ export function InterviewSetup() {
   const createInterview = async () => {
   if (canStart) {
     try {
+      setCreatingInterview(true)
       const res = await FlaskApi.createinterview(interviewConfig);
 
       if (res.data && res.data.success === true) {
@@ -112,8 +114,8 @@ export function InterviewSetup() {
           // Listen first for server confirmation
           socket.on("interviewerJoinedRoom", (data) => {
             console.log("📩 Server joined room:", data);
+            setCreatingInterview(false)
             toast.success("Interviewer Joined. All The Best!", toastStyle(true));
-
             navigate("/audio-interview", {
               state: {
                 roomId: res.data.roomId,
@@ -128,10 +130,12 @@ export function InterviewSetup() {
           socket.emit("joinRoom", res.data.roomId);
         });
       } else {
+        setCreatingInterview(false)
         console.error("Interview creation failed", res.data);
         toast.error("Failed to create interview. Please try again.", toastStyle(false));
       }
     } catch (error) {
+      setCreatingInterview(false)
       console.error("Error creating interview:", error);
       toast.error("An error occurred while creating the interview.", toastStyle(false));
     }
@@ -443,32 +447,39 @@ export function InterviewSetup() {
                 <div className="space-y-4">
                   <button
                     onClick={createInterview}
-                    disabled={!canStart}
+                    disabled={!canStart || creatingInterview}
                     className={`w-full py-5 rounded-xl font-bold text-lg transition-all flex items-center justify-center space-x-3 ${
-                      canStart
+                      canStart && !creatingInterview
                         ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 shadow-lg shadow-green-500/50 transform hover:scale-105"
                         : "bg-gray-700 text-gray-500 cursor-not-allowed"
                     }`}
                   >
-                    <Play className="w-6 h-6" />
-                    <span>Start Interview</span>
+                    {creatingInterview ? (
+                      <svg
+                        className="animate-spin w-6 h-6 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                        ></path>
+                      </svg>
+                    ) : (
+                      <Play className="w-6 h-6" />
+                    )}
+                    <span>{creatingInterview ? "Creating ..." : "Start Interview"}</span>
                   </button>
-
-                  {!canStart && (
-                    <div className="bg-slate-700/30 rounded-lg p-4 text-center">
-                      <p className="text-gray-400 text-sm">
-                        Complete all system checks above to proceed
-                      </p>
-                    </div>
-                  )}
-
-                  {canStart && (
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-center">
-                      <p className="text-green-400 font-semibold">
-                        ✓ All systems ready! Click to begin
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
