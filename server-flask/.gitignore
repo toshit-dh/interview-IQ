@@ -1,0 +1,7 @@
+# Do not commit secrets or local DBs
+.env
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
