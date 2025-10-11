@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import * as Icons from "lucide-react";
 import InterviewApi from "../../api/InterviewApi";
 import { Globe, Search } from "lucide-react";
+import { LoadingPage } from "../components/Loader";
 
 export function ExplorePage() {
   const navigate = useNavigate();
@@ -15,7 +16,10 @@ export function ExplorePage() {
     async function getPaths() {
       try {
         setLoading(true);
-        const res = await InterviewApi.getPaths();
+        const [res] = await Promise.all([
+        InterviewApi.getPaths(),
+        new Promise((resolve) => setTimeout(resolve, 2000)) // 2s delay
+      ]);
         setPaths(res.data || []);
       } catch (error) {
         console.error(error);
@@ -71,6 +75,12 @@ export function ExplorePage() {
       </div>
     );
   };
+
+  if (loading) {
+      return (
+        <LoadingPage text={`Fetching paths .... `}/>
+      );
+    }
 
   return (
     <div className="min-h-screen bg-slate-900 p-6">

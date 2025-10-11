@@ -49,6 +49,9 @@ export function InterviewSetup() {
     pdfContainsAnswers
   };
 
+  console.log(interviewConfig);
+  
+
   const [micPermission, setMicPermission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);

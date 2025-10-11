@@ -23,8 +23,11 @@ import {
   Heart,
   AlertCircle,
 } from "lucide-react";
+import {useNavigate} from "react-router-dom"
 
 export default function InterviewOptionsDialog({ module, path, onClose }) {
+  
+  const navigate = useNavigate();
   const [difficulty, setDifficulty] = useState("");
   const [pdfModeEnabled, setPdfModeEnabled] = useState(false);
   const [uploadedPdf, setUploadedPdf] = useState(null);
@@ -87,16 +90,18 @@ export default function InterviewOptionsDialog({ module, path, onClose }) {
       (pdfModeEnabled && pdfContainsAnswers ? true : llm);
 
     if (isValid) {
-      navigate(`/interview-setup`,{
-        difficulty,
-        llm: pdfModeEnabled && pdfContainsAnswers ? "PDF" : llm,
-        interviewType,
-        persona,
-        module,
-        path,
-        pdfMode: pdfModeEnabled,
-        pdfFile: uploadedPdf,
-        pdfContainsAnswers,
+      navigate(`/interview-setup`, {
+        state: {
+          difficulty,
+          llm: pdfModeEnabled && pdfContainsAnswers ? "PDF" : llm,
+          interviewType,
+          persona,
+          module,
+          path,
+          pdfMode: pdfModeEnabled,
+          pdfFile: uploadedPdf,
+          pdfContainsAnswers,
+        },
       });
     }
   };
