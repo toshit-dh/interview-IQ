@@ -5,6 +5,7 @@ import * as Icons from "lucide-react";
 import { Clock, Target, Play } from "lucide-react";
 import InterviewApi from "../../api/InterviewApi";
 import InterviewOptionsDialog from "../components/InterviewOptionsDialog";
+import { LoadingPage } from "../components/Loader";
 export default function ModulePage() {
   const { pathId } = useParams();
   const navigate = useNavigate();
@@ -16,28 +17,32 @@ export default function ModulePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchModules() {
-      try {
-        setLoading(true);
-        const res = await InterviewApi.getModuleOfPath(pathId);
-        console.log(res);
+  async function fetchModules() {
+    try {
+      setLoading(true);
 
-        setPath(res.path); // Adjust if API wraps differently
-        setModules(res.data || []);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
+      // Start fetching and a 2s minimum timer simultaneously
+      const [res] = await Promise.all([
+        InterviewApi.getModuleOfPath(pathId),
+        new Promise((resolve) => setTimeout(resolve, 2000)) // 2s delay
+      ]);
+
+      console.log(res);
+      setPath(res.path); 
+      setModules(res.data || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false); // Stops loader after at least 2s
     }
-    fetchModules();
-  }, [pathId]);
+  }
+
+  fetchModules();
+}, [pathId]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-white text-xl">
-        Loading...
-      </div>
+      <LoadingPage text={`Fetching modules .... `}/>
     );
   }
 
