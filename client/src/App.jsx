@@ -16,7 +16,7 @@ import { DiscussPage } from "./pages/DiscussPage";
 import { ExplorePage } from "./pages/Explore";
 import { AudioInterview } from "./pages/AudioInterview";
 import ModulePage from "./pages/ModulesPage";
-import { InterviewSetup } from "./pages/InterviewSetup";
+import Analytics from "./pages/Analytics";
 
 function App() {
   return (
@@ -51,7 +51,14 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route path="/interview-setup" element={<InterviewSetup/>}/>
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute allowedRoles={["user", "admin"]}>
+                  <Analytics />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/premium" element={<PremiumInfo />} />
             <Route path="/discuss" element={<DiscussPage />} />
             <Route path="/explore" element={<ExplorePage />} />
