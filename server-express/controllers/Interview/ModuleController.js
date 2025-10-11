@@ -8,7 +8,6 @@ const ModuleController = {
       const { id: pathId } = req.params;
 
       const path = await Path.findById(pathId).populate("modules");
-      console.log(pathId);
       
       if (!path) {
         
