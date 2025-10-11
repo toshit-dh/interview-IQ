@@ -103,7 +103,6 @@ export default function ModulePage() {
 }
 
 function ModuleCard({ module, onClick }) {
-  const navigate = useNavigate();
   const Icon = Icons[module.icon];
 
   return (
