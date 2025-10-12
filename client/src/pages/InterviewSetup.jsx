@@ -13,6 +13,7 @@ import {
   Brain,
   Target,
   Shield,
+  Check
 } from "lucide-react";
 import { connectSocket } from "../services/socket";
 import toast, { Toaster } from "react-hot-toast";
@@ -100,11 +101,7 @@ export function InterviewSetup() {
 
     try {
       setCreatingInterview(true);
-
-      // Connect socket (singleton)
       const socket = connectSocket();
-
-      // Build session payload compatible with Flask 'start-interview-session'
       const sessionData = {
         action: "start-interview",
         config: {
@@ -145,8 +142,7 @@ export function InterviewSetup() {
           ],
         },
       };
-
-      // Wire one-time listeners before emitting
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       const onSessionStarted = (data) => {
         console.log("✅ Interview session started:", data);
         setCreatingInterview(false);
@@ -154,7 +150,6 @@ export function InterviewSetup() {
         navigate("/audio-interview", {
           state: {
             sessionId: data?.sessionId,
-            // keep friend’s state shape additions
             path: path?.name,
             module: module?.name,
             difficulty,
@@ -163,7 +158,6 @@ export function InterviewSetup() {
             persona,
           },
         });
-        // Clean up this one-time handler
         socket.off("interview-session-started", onSessionStarted);
       };
 
@@ -483,6 +477,15 @@ export function InterviewSetup() {
                       </div>
                     </li>
                     <li className="flex items-start space-x-3">
+                      <Check className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-white font-medium">Answer</p>
+                        <p className="text-gray-400 text-sm">
+                          You can answer after 5 sec of question display. Recording will auto start
+                        </p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
                       <Clock className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
                       <div>
                         <p className="text-white font-medium">Auto Recording</p>
@@ -529,7 +532,9 @@ export function InterviewSetup() {
                     ) : (
                       <Play className="w-6 h-6" />
                     )}
-                    <span>{creatingInterview ? "Creating ..." : "Start Interview"}</span>
+                    <span>
+                      {creatingInterview ? "Creating ..." : "Start Interview"}
+                    </span>
                   </button>
                 </div>
               </div>

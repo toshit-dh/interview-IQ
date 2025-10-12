@@ -13,12 +13,12 @@ import InterviewCancelledModal from "../components/AudioInterview/InterviewCance
 export function AudioInterview() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { pathId, moduleId } = useParams();
-  
+
   const interviewConfig = location.state || {};
-  const moduleNameFromState = interviewConfig.moduleName || interviewConfig.module || interviewConfig.moduleId;
-  const { difficulty, llm, interviewType, persona } = interviewConfig;
-  
+  const { difficulty, llm, interviewType, persona, path, module } =
+    interviewConfig;
+
+  const [countdown, setCountdown] = useState(null);  
   const [duration, setDuration] = useState("00:00");
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -27,37 +27,41 @@ export function AudioInterview() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStartTime, setRecordingStartTime] = useState(null);
   const [canAnswer, setCanAnswer] = useState(false);
-  const [answerQuality, setAnswerQuality] = useState(Array(10).fill('grey'));
+  const [answerQuality, setAnswerQuality] = useState(Array(10).fill("grey"));
   const [currentAnswerIndex, setCurrentAnswerIndex] = useState(0);
   const currentAnswerIndexRef = useRef(0);
-  const [liveWarnings, setLiveWarnings] = useState('');
+  const [liveWarnings, setLiveWarnings] = useState("");
   const [currentQuestion, setCurrentQuestion] = useState({
     questionNumber: 1,
     totalQuestions: 10,
     questionText: "Waiting for your first question...",
-    category: "introduction"
+    category: "introduction",
   });
   const [insights, setInsights] = useState([
     { insightType: "clarity", text: "Speak clearly and at a moderate pace" },
-    { insightType: "fillerWords", text: "Avoid filler words like 'um' and 'uh'" },
+    {
+      insightType: "fillerWords",
+      text: "Avoid filler words like 'um' and 'uh'",
+    },
     { insightType: "pause", text: "Take a brief pause before answering" },
-    { insightType: "examples", text: "Use specific examples in your responses" },
-    { insightType: "confidence", text: "Maintain a confident tone throughout" }
+    { insightType: "confidence", text: "Maintain a confident tone throughout" },
   ]);
 
   const mediaRecorderRef = useRef(null);
   const mainStreamRef = useRef(null);
   const sessionIdRef = useRef(null);
-  const questionRetryRef = useRef(null); 
+  const questionRetryRef = useRef(null);
   const waitingForTranscriptionRef = useRef(false);
   const pendingAnswerDataRef = useRef(null);
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
-  const hasStartedSessionRef = useRef(false);  
-  const listenersRegisteredRef = useRef(false); 
+  const hasStartedSessionRef = useRef(false);
+  const listenersRegisteredRef = useRef(false);
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
     const secs = (seconds % 60).toString().padStart(2, "0");
     return `${mins}:${secs}`;
   };
@@ -70,7 +74,8 @@ export function AudioInterview() {
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [navigate]);
 
   useEffect(() => {
@@ -80,13 +85,14 @@ export function AudioInterview() {
     return () => clearInterval(interval);
   }, []);
 
-
   useEffect(() => {
     startTimeRef.current = Date.now();
     let lastSeconds = 0;
 
     timerRef.current = setInterval(() => {
-      const elapsedSeconds = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      const elapsedSeconds = Math.floor(
+        (Date.now() - startTimeRef.current) / 1000
+      );
       if (elapsedSeconds !== lastSeconds) {
         setDuration(formatTime(elapsedSeconds));
         lastSeconds = elapsedSeconds;
@@ -96,15 +102,12 @@ export function AudioInterview() {
     return () => clearInterval(timerRef.current);
   }, []);
 
-
   useEffect(() => {
     currentAnswerIndexRef.current = currentAnswerIndex;
   }, [currentAnswerIndex]);
 
-  
   useEffect(() => {
     if (listenersRegisteredRef.current) {
-     
       return;
     }
     listenersRegisteredRef.current = true;
@@ -113,7 +116,9 @@ export function AudioInterview() {
     socket.on("connect", () => {
       console.log("✅ Connected to server, socket ID:", socket.id);
       if (sessionIdRef.current) {
-        socket.emit("resume-interview-session", { sessionId: sessionIdRef.current });
+        socket.emit("resume-interview-session", {
+          sessionId: sessionIdRef.current,
+        });
       }
     });
 
@@ -127,8 +132,8 @@ export function AudioInterview() {
       const message = warningData?.message || String(warningData || "");
       if (message) {
         setLiveWarnings(message);
-        const timeoutMs = type === 'no_answer' ? 5000 : 3000;
-        setTimeout(() => setLiveWarnings(''), timeoutMs);
+        const timeoutMs = type === "no_answer" ? 5000 : 3000;
+        setTimeout(() => setLiveWarnings(""), timeoutMs);
       }
     });
 
@@ -139,7 +144,7 @@ export function AudioInterview() {
         totalQuestions: questionData.totalQuestions,
         questionText: questionData.questionText,
         category: questionData.category,
-        questionId: questionData.questionId
+        questionId: questionData.questionId,
       });
 
       if (questionRetryRef.current) {
@@ -154,31 +159,41 @@ export function AudioInterview() {
     socket.on("interview-feedback", (feedbackData) => {
       console.log("📊 Feedback:", feedbackData);
       if (feedbackData.insights) {
-        setInsights(prev => [...prev, ...feedbackData.insights]);
-        const first = Array.isArray(feedbackData.insights) ? feedbackData.insights[0] : null;
-        const text = typeof first === 'string' ? first : first?.text;
+        setInsights((prev) => [...prev, ...feedbackData.insights]);
+        const first = Array.isArray(feedbackData.insights)
+          ? feedbackData.insights[0]
+          : null;
+        const text = typeof first === "string" ? first : first?.text;
         if (feedbackData.isUpdate && text) {
           setLiveWarnings(text);
-          setTimeout(() => setLiveWarnings(''), 3000);
+          setTimeout(() => setLiveWarnings(""), 3000);
         }
       }
       if (feedbackData.scores) {
-        
         const s = feedbackData.scores || {};
-        const commScore = s.overall_communication_score ?? (
-          (typeof s.confidence_score === 'number' && typeof s.clarity_score === 'number')
+        const commScore =
+          s.overall_communication_score ??
+          (typeof s.confidence_score === "number" &&
+          typeof s.clarity_score === "number"
             ? (s.confidence_score + s.clarity_score) / 2
-            : undefined
-        );
+            : undefined);
         const overallScore = commScore ?? s.overall ?? 70;
         const fillerWordsCount = s.filler_words_count ?? s.fillerCount ?? 0;
-        const pauseEvents = (s.pause_events ?? s.pauseEvents ?? feedbackData.pause_events ?? 0);
-        const repetitionCount = s.repetition_count ?? s.repetitionCount ?? feedbackData.repetition_count ?? 0;
-        const emptyAnswer = (feedbackData.emptyAnswer ?? s.empty_answer ?? s.emptyAnswer ?? false) === true;
+        const pauseEvents =
+          s.pause_events ?? s.pauseEvents ?? feedbackData.pause_events ?? 0;
+        const repetitionCount =
+          s.repetition_count ??
+          s.repetitionCount ??
+          feedbackData.repetition_count ??
+          0;
+        const emptyAnswer =
+          (feedbackData.emptyAnswer ??
+            s.empty_answer ??
+            s.emptyAnswer ??
+            false) === true;
 
-        
-        let quality = 'green';
-        const isFillerHeavy = fillerWordsCount >= 5; 
+        let quality = "green";
+        const isFillerHeavy = fillerWordsCount >= 5;
         const hasLongPauseRed = pauseEvents >= 2;
         const hasLongPauseYellow = pauseEvents === 1;
         const strongRepetition = repetitionCount >= 3;
@@ -186,80 +201,115 @@ export function AudioInterview() {
         const lowScore = overallScore < 55;
         const mediumScore = overallScore < 70;
 
-        if (emptyAnswer || isFillerHeavy || hasLongPauseRed || strongRepetition || lowScore) {
-          quality = 'red';
-        } else if (fillerWordsCount >= 2 || weakRepetition || mediumScore || hasLongPauseYellow) {
-          quality = 'yellow';
+        if (
+          emptyAnswer ||
+          isFillerHeavy ||
+          hasLongPauseRed ||
+          strongRepetition ||
+          lowScore
+        ) {
+          quality = "red";
+        } else if (
+          fillerWordsCount >= 2 ||
+          weakRepetition ||
+          mediumScore ||
+          hasLongPauseYellow
+        ) {
+          quality = "yellow";
         }
 
-        
         if (emptyAnswer) {
-          setLiveWarnings('No answer detected. Try to speak at least a full sentence.');
-          setTimeout(() => setLiveWarnings(''), 5000);
-          setInsights(prev => [
+          setLiveWarnings(
+            "No answer detected. Try to speak at least a full sentence."
+          );
+          setTimeout(() => setLiveWarnings(""), 5000);
+          setInsights((prev) => [
             ...prev,
-            { insightType: 'warning', text: 'No answer detected for the last question.' }
+            {
+              insightType: "warning",
+              text: "No answer detected for the last question.",
+            },
           ]);
         }
 
         const isUpdate = feedbackData.isUpdate === true;
-        const qn = Number.isInteger(feedbackData.questionNumber) ? feedbackData.questionNumber : null;
-        const idxToUpdate = isUpdate && qn ? Math.max(0, Math.min(9, qn - 1)) : currentAnswerIndexRef.current;
+        const qn = Number.isInteger(feedbackData.questionNumber)
+          ? feedbackData.questionNumber
+          : null;
+        const idxToUpdate =
+          isUpdate && qn
+            ? Math.max(0, Math.min(9, qn - 1))
+            : currentAnswerIndexRef.current;
 
-        setAnswerQuality(prev => {
+        setAnswerQuality((prev) => {
           const newQuality = [...prev];
           newQuality[idxToUpdate] = quality;
           return newQuality;
         });
         if (!isUpdate) {
-          setCurrentAnswerIndex(prev => Math.min(prev + 1, 9));
+          setCurrentAnswerIndex((prev) => Math.min(prev + 1, 9));
         }
       }
     });
 
     socket.on("interview-session-started", (sessionData) => {
       console.log("🎬 Session started:", sessionData);
-      const incomingSessionId = sessionData?.sessionId || sessionData?.session_id;
+      const incomingSessionId =
+        sessionData?.sessionId || sessionData?.session_id;
       if (incomingSessionId) {
         sessionIdRef.current = incomingSessionId;
 
-        socket.emit("get-current-question", { sessionId: sessionIdRef.current });
+        socket.emit("get-current-question", {
+          sessionId: sessionIdRef.current,
+        });
       }
     });
 
     socket.on("interview-complete", (completionData) => {
       console.log("🎉 Interview complete:", completionData);
+
+      // Exit fullscreen if active
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch((err) => {
+          console.warn("Failed to exit fullscreen:", err);
+        });
+      }
+
       setTimeout(() => {
-        navigate("/analytics", { 
-          state: { 
+        navigate("/analytics", {
+          state: {
             sessionId: completionData.session_id || completionData.sessionId,
             completedQuestions: completionData.completedQuestions,
-            interviewData: completionData
-          }
+            interviewData: completionData,
+          },
         });
       }, 1000);
     });
 
+
     socket.on("interview-ended", (endData) => {
       console.log("🛑 Interview ended:", endData);
       setTimeout(() => {
-        navigate("/analytics", { 
-          state: { 
+        navigate("/analytics", {
+          state: {
             sessionId: endData.session_id || endData.sessionId,
             completedQuestions: endData.completedQuestions,
-            interviewData: endData
-          }
+            interviewData: endData,
+          },
         });
       }, 1000);
     });
 
     socket.on("audio-transcription", (data) => {
       console.log("🗣️ Transcription:", data);
-     
+
       if (data && data.success && data.transcript) {
-        setInsights(prev => [
+        setInsights((prev) => [
           ...prev,
-          { insightType: 'transcript', text: `Received transcription (${data.transcript.length} chars)` }
+          {
+            insightType: "transcript",
+            text: `Received transcription (${data.transcript.length} chars)`,
+          },
         ]);
       }
     });
@@ -282,14 +332,14 @@ export function AudioInterview() {
       socket.off("error");
       listenersRegisteredRef.current = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
- 
   useEffect(() => {
-    const isWaiting = !currentQuestion?.questionText || /waiting for/i.test(currentQuestion.questionText);
-    if (!sessionIdRef.current) return; 
+    const isWaiting =
+      !currentQuestion?.questionText ||
+      /waiting for/i.test(currentQuestion.questionText);
+    if (!sessionIdRef.current) return;
     if (!isWaiting) {
-     
       if (questionRetryRef.current) {
         clearInterval(questionRetryRef.current);
         questionRetryRef.current = null;
@@ -299,7 +349,9 @@ export function AudioInterview() {
     if (!questionRetryRef.current) {
       questionRetryRef.current = setInterval(() => {
         console.log("⏳ Still waiting for question – requesting again...");
-        socket.emit("get-current-question", { sessionId: sessionIdRef.current });
+        socket.emit("get-current-question", {
+          sessionId: sessionIdRef.current,
+        });
       }, 2000);
     }
     return () => {
@@ -311,23 +363,37 @@ export function AudioInterview() {
   }, [currentQuestion?.questionText]);
 
   useEffect(() => {
-    if (!difficulty || !llm || !interviewType || !persona || hasStartedSessionRef.current) return;
+    if (
+      !difficulty ||
+      !llm ||
+      !interviewType ||
+      !persona ||
+      hasStartedSessionRef.current
+    )
+      return;
 
     const incomingSessionId = interviewConfig.sessionId || sessionIdRef.current;
     if (incomingSessionId) {
       sessionIdRef.current = incomingSessionId;
       if (socket.connected) {
         console.log("🔁 Resuming existing session", incomingSessionId);
-        socket.emit("resume-interview-session", { sessionId: incomingSessionId });
+        socket.emit("resume-interview-session", {
+          sessionId: incomingSessionId,
+        });
         socket.emit("get-current-question", { sessionId: incomingSessionId });
       } else {
         socket.once("connect", () => {
-          console.log("🔁 Resuming existing session after connect", incomingSessionId);
-          socket.emit("resume-interview-session", { sessionId: incomingSessionId });
+          console.log(
+            "🔁 Resuming existing session after connect",
+            incomingSessionId
+          );
+          socket.emit("resume-interview-session", {
+            sessionId: incomingSessionId,
+          });
           socket.emit("get-current-question", { sessionId: incomingSessionId });
         });
       }
-      hasStartedSessionRef.current = true; 
+      hasStartedSessionRef.current = true;
       return;
     }
 
@@ -350,18 +416,62 @@ export function AudioInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [difficulty, llm, interviewType, persona, navigate]);
 
+  useEffect(() => {
+    if (!canAnswer) {
+      setCountdown(null);
+      return;
+    }
+
+    const isWaiting =
+      !currentQuestion?.questionText ||
+      /waiting for/i.test(currentQuestion.questionText);
+    if (isWaiting) return;
+
+    let counter = 10; // 5 seconds countdown
+    setCountdown(counter);
+
+    const interval = setInterval(() => {
+      counter -= 1;
+      setCountdown(counter);
+      if (counter <= 0) {
+        clearInterval(interval);
+        setCountdown(null);
+        handleStartAnswer(); // auto-start recording
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentQuestion?.questionText, canAnswer]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === "Space" && isRecording) {
+        e.preventDefault(); // prevent scrolling
+        handleAnswerComplete();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRecording]);
+
 
   const startRecording = async () => {
     try {
-      const preferredType = window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm'
-        : 'audio/webm;codecs=opus';
+      const preferredType =
+        window.MediaRecorder &&
+        MediaRecorder.isTypeSupported &&
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm"
+          : "audio/webm;codecs=opus";
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mainStreamRef.current = stream;
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: preferredType });
+      mediaRecorderRef.current = new MediaRecorder(stream, {
+        mimeType: preferredType,
+      });
 
       const audioChunks = [];
-      
+
       mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) {
           audioChunks.push(event.data);
@@ -369,32 +479,32 @@ export function AudioInterview() {
         }
       });
 
-    
       mediaRecorderRef.current.addEventListener("stop", () => {
         if (audioChunks.length > 0) {
           const completeBlob = new Blob(audioChunks, { type: preferredType });
           console.log(`🎤 Complete audio: ${completeBlob.size} bytes`);
-          
+
           const reader = new FileReader();
           reader.onloadend = () => {
-            const base64Data = reader.result.split(',')[1];
-            socket.emit("process-complete-audio", { 
+            const base64Data = reader.result.split(",")[1];
+            socket.emit("process-complete-audio", {
               audioData: base64Data,
               timestamp: Date.now(),
-              sessionId: sessionIdRef.current
+              sessionId: sessionIdRef.current,
             });
           };
           reader.readAsDataURL(completeBlob);
         }
-        
-        
-        stream.getTracks().forEach(track => track.stop());
+
+        stream.getTracks().forEach((track) => track.stop());
       });
 
-      socket.emit("recording-start", { timestamp: Date.now(), sessionId: sessionIdRef.current });
-      
-      mediaRecorderRef.current.start(1000);
+      socket.emit("recording-start", {
+        timestamp: Date.now(),
+        sessionId: sessionIdRef.current,
+      });
 
+      mediaRecorderRef.current.start(1000);
 
       setIsRecording(true);
       setIsUserSpeaking(true);
@@ -408,10 +518,17 @@ export function AudioInterview() {
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      try { mediaRecorderRef.current.stop(); } catch { /* no-op */ }
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        /* no-op */
+      }
       setIsRecording(false);
       setIsUserSpeaking(false);
-      socket.emit("recording-stop", { timestamp: Date.now(), sessionId: sessionIdRef.current });
+      socket.emit("recording-stop", {
+        timestamp: Date.now(),
+        sessionId: sessionIdRef.current,
+      });
       console.log("⏹️ Recording stopped");
     }
   };
@@ -423,25 +540,31 @@ export function AudioInterview() {
     }
 
     stopRecording();
-    const duration = recordingStartTime ? (Date.now() - recordingStartTime) / 1000 : 30;
-
+    const duration = recordingStartTime
+      ? (Date.now() - recordingStartTime) / 1000
+      : 30;
 
     const answerPayload = {
       transcript: "",
       duration,
       timestamp: new Date().toISOString(),
-      questionId: currentQuestion.questionId || 'current-question',
-      sessionId: sessionIdRef.current
+      questionId: currentQuestion.questionId || "current-question",
+      sessionId: sessionIdRef.current,
     };
     console.log("📤 Submitting answer immediately:", answerPayload);
     socket.emit("answer-complete", answerPayload);
     setCanAnswer(false);
     waitingForTranscriptionRef.current = false;
     pendingAnswerDataRef.current = null;
-    setInsights(prev => [...prev, {
-      insightType: 'system',
-      text: `Answer submitted (${duration.toFixed(1)}s). Generating next question...`
-    }]);
+    setInsights((prev) => [
+      ...prev,
+      {
+        insightType: "system",
+        text: `Answer submitted (${duration.toFixed(
+          1
+        )}s). Generating next question...`,
+      },
+    ]);
   };
 
   const handleStartAnswer = () => {
@@ -463,22 +586,26 @@ export function AudioInterview() {
         persona,
         moduleId,
         pathId,
-        subject: (moduleNameFromState || moduleId || pathId || "general"),
+        subject: moduleNameFromState || moduleId || pathId || "general",
         interviewMode: "ai-powered",
         maxQuestions: 10,
-        expectedDuration: difficulty === "Easy" ? 15 : difficulty === "Medium" ? 25 : 35
+        expectedDuration:
+          difficulty === "Easy" ? 15 : difficulty === "Medium" ? 25 : 35,
       },
       metadata: {
-        sessionId: `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sessionId: `interview_${Date.now()}_${Math.random()
+          .toString(36)
+          .substr(2, 9)}`,
         startTime: new Date().toISOString(),
         userAgent: navigator.userAgent,
         platform: navigator.platform,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       aiConfig: {
         primaryLLM: llm,
         fallbackLLM: llm === "ChatGPT" ? "Claude" : "ChatGPT",
-        temperature: difficulty === "Easy" ? 0.3 : difficulty === "Medium" ? 0.5 : 0.7,
+        temperature:
+          difficulty === "Easy" ? 0.3 : difficulty === "Medium" ? 0.5 : 0.7,
         enableFollowUps: true,
         enableFeedback: true,
         evaluationCriteria: [
@@ -486,16 +613,20 @@ export function AudioInterview() {
           "communication_clarity",
           "problem_solving",
           "confidence",
-          "speaking_quality"
-        ]
-      }
+          "speaking_quality",
+        ],
+      },
     };
-    
+
     console.log("🚀 Starting session:", sessionData);
     socket.emit("start-interview-session", sessionData);
-   
+
     setTimeout(() => {
-      try { socket.emit("get-current-question", {}); } catch { /* no-op */ }
+      try {
+        socket.emit("get-current-question", {});
+      } catch {
+        /* no-op */
+      }
     }, 200);
   };
 
@@ -507,7 +638,7 @@ export function AudioInterview() {
     socket.emit("end-interview", {
       reason: "user_ended",
       timestamp: new Date().toISOString(),
-      sessionId: sessionIdRef.current
+      sessionId: sessionIdRef.current,
     });
   };
 
@@ -522,18 +653,23 @@ export function AudioInterview() {
             </div>
           </div>
         )}
-        
+
         <div className="mb-8">
-          <h3 className="text-white text-center mb-4 text-lg font-semibold">Answer Quality Progress</h3>
+          <h3 className="text-white text-center mb-4 text-lg font-semibold">
+            Answer Quality Progress
+          </h3>
           <div className="flex space-x-2">
             {answerQuality.map((quality, index) => (
               <div
                 key={index}
                 className={`w-8 h-8 rounded-lg border-2 border-white/20 flex items-center justify-center text-sm font-bold ${
-                  quality === 'green' ? 'bg-green-500 text-white' :
-                  quality === 'yellow' ? 'bg-yellow-500 text-black' :
-                  quality === 'red' ? 'bg-red-500 text-white' :
-                  'bg-gray-600 text-gray-300'
+                  quality === "green"
+                    ? "bg-green-500 text-white"
+                    : quality === "yellow"
+                    ? "bg-yellow-500 text-black"
+                    : quality === "red"
+                    ? "bg-red-500 text-white"
+                    : "bg-gray-600 text-gray-300"
                 }`}
               >
                 {index + 1}
@@ -541,10 +677,14 @@ export function AudioInterview() {
             ))}
           </div>
           <div className="text-center mt-2 text-sm text-gray-300">
-            <span className="inline-block w-3 h-3 bg-green-500 rounded mr-1"></span>Excellent
-            <span className="inline-block w-3 h-3 bg-yellow-500 rounded mr-1 ml-4"></span>Good
-            <span className="inline-block w-3 h-3 bg-red-500 rounded mr-1 ml-4"></span>Needs Work
-            <span className="inline-block w-3 h-3 bg-gray-600 rounded mr-1 ml-4"></span>Pending
+            <span className="inline-block w-3 h-3 bg-green-500 rounded mr-1"></span>
+            Excellent
+            <span className="inline-block w-3 h-3 bg-yellow-500 rounded mr-1 ml-4"></span>
+            Good
+            <span className="inline-block w-3 h-3 bg-red-500 rounded mr-1 ml-4"></span>
+            Needs Work
+            <span className="inline-block w-3 h-3 bg-gray-600 rounded mr-1 ml-4"></span>
+            Pending
           </div>
         </div>
 
@@ -563,38 +703,37 @@ export function AudioInterview() {
           />
         </div>
       </div>
-      
-      <div className="absolute top-20 right-4 z-50 space-y-2">
-        {!isRecording && canAnswer && (
-          <button
-            onClick={handleStartAnswer}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg text-sm font-semibold w-full shadow-lg"
-          >
-            🎤 Start Answer
-          </button>
-        )}
-        
+
+      <div className="fixed bottom-8 right-4 z-50 w-72 space-y-2">
+        <div className="bg-gray-800 text-white px-6 py-3 rounded-full text-center font-semibold shadow-lg">
+          {isRecording ? (
+            <span className="text-red-400">🔴 Recording...</span>
+          ) : countdown !== null ? (
+            <span>⏳ You can answer in {countdown}s</span>
+          ) : !canAnswer ? (
+            <span>⏳ Waiting for question...</span>
+          ) : (
+            <button
+              onClick={handleStartAnswer}
+              className="bg-blue-500 hover:bg-blue-600 px-4 py-1 rounded-full font-semibold shadow"
+            >
+              🎤 Start Answer
+            </button>
+          )}
+        </div>
+
         {isRecording && (
-          <div className="space-y-2">
-            <div className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm text-center font-semibold">
-              🔴 Recording...
-            </div>
+          <div>
             <button
               onClick={handleAnswerComplete}
-              className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg text-sm font-semibold w-full shadow-lg"
+              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full font-semibold w-full shadow"
             >
-              ✅ Complete Answer
+              ✅ Complete Answer Or Click Space Bar
             </button>
           </div>
         )}
-        
-        {!canAnswer && !isRecording && (
-          <div className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm text-center">
-            Waiting for question...
-          </div>
-        )}
       </div>
-      
+
       <AIInsightsPanel insights={insights} />
       <CurrentQuestionDisplay
         questionNumber={currentQuestion.questionNumber}
@@ -605,13 +744,13 @@ export function AudioInterview() {
       <InterviewInfoPanel
         duration={duration}
         questionCount={`${currentQuestion.questionNumber}/${currentQuestion.totalQuestions}`}
-        path={pathId || "General"}
-        module={moduleNameFromState || moduleId}
+        path={path}
+        module={module}
         interviewConfig={{ difficulty, llm, interviewType, persona }}
       />
 
       {showEndConfirm && (
-        <EndInterviewModal 
+        <EndInterviewModal
           onCancel={() => setShowEndConfirm(false)}
           onConfirm={handleEndInterview}
         />
