@@ -15,7 +15,6 @@ import {
   Shield,
 } from "lucide-react";
 import { connectSocket } from "../services/socket";
-import FlaskApi from "../../api/FlaskApi";
 import toast, { Toaster } from "react-hot-toast";
 import { toastStyle } from "../../utils/toastStyle";
 
@@ -79,6 +78,7 @@ export function InterviewSetup() {
       setMicPermission(true);
       stream.getTracks().forEach((track) => track.stop());
     } catch (error) {
+      console.error("Microphone access denied:", error);
       alert("Microphone access denied. Please allow access to continue.");
     }
   };
@@ -89,58 +89,109 @@ export function InterviewSetup() {
       setCameraPermission(true);
       stream.getTracks().forEach((track) => track.stop());
     } catch (error) {
+      console.error("Camera access denied:", error);
       alert("Camera access denied. Please allow access to continue.");
     }
   };
 
-  // Create interview with loading
+  // Create interview with Flask Socket.IO backend (no Express rooms)
   const createInterview = async () => {
-  if (canStart) {
+    if (!canStart) return;
+
     try {
-      setCreatingInterview(true)
-      const res = await FlaskApi.createinterview(interviewConfig);
+      setCreatingInterview(true);
 
-      if (res.data && res.data.success === true) {
-        toast.success(
-          "Interview Created Successfully. Waiting for interviewer to join.",
-          toastStyle(true)
-        );
+      // Connect socket (singleton)
+      const socket = connectSocket();
 
-        const socket = connectSocket();
+      // Build session payload compatible with Flask 'start-interview-session'
+      const sessionData = {
+        action: "start-interview",
+        config: {
+          difficulty,
+          llm,
+          interviewType,
+          persona,
+          // IDs if present, else defaults
+          moduleId: module?.id || module?._id || "default",
+          pathId: path?.id || path?._id || "default",
+          // Subject used by Flask to generate domain-specific questions
+          subject: module?.name || path?.name || "general",
+          interviewMode: "ai-powered",
+          maxQuestions: 10,
+          expectedDuration:
+            difficulty === "Easy" ? 15 : difficulty === "Medium" ? 25 : 35,
+        },
+        metadata: {
+          sessionId:
+            "interview_" + Date.now() + "_" + Math.random().toString(36).slice(2, 11),
+          startTime: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        aiConfig: {
+          primaryLLM: llm,
+          fallbackLLM: llm === "ChatGPT" ? "Claude" : "ChatGPT",
+          temperature: difficulty === "Easy" ? 0.3 : difficulty === "Medium" ? 0.5 : 0.7,
+          enableFollowUps: true,
+          enableFeedback: true,
+          evaluationCriteria: [
+            "technical_accuracy",
+            "communication_clarity",
+            "problem_solving",
+            "confidence",
+            "speaking_quality",
+          ],
+        },
+      };
 
-        socket.on("connect", () => {
-          console.log("✅ Socket connected");
-
-          // Listen first for server confirmation
-          socket.on("interviewerJoinedRoom", (data) => {
-            console.log("📩 Server joined room:", data);
-            setCreatingInterview(false)
-            toast.success("Interviewer Joined. All The Best!", toastStyle(true));
-            navigate("/audio-interview", {
-              state: {
-                roomId: res.data.roomId,
-                path: path.name,
-                module: module.name,
-                socket, // pass socket
-              },
-            });
-          });
-
-          // Now emit joinRoom
-          socket.emit("joinRoom", res.data.roomId);
+      // Wire one-time listeners before emitting
+      const onSessionStarted = (data) => {
+        console.log("✅ Interview session started:", data);
+        setCreatingInterview(false);
+        toast.success("Interview session started!", toastStyle(true));
+        navigate("/audio-interview", {
+          state: {
+            sessionId: data?.sessionId,
+            // keep friend’s state shape additions
+            path: path?.name,
+            module: module?.name,
+            difficulty,
+            llm,
+            interviewType,
+            persona,
+          },
         });
+        // Clean up this one-time handler
+        socket.off("interview-session-started", onSessionStarted);
+      };
+
+      const onError = (err) => {
+        console.error("❌ Flask server error:", err);
+        setCreatingInterview(false);
+        toast.error(err?.message || "Failed to start interview", toastStyle(false));
+        socket.off("error", onError);
+      };
+
+      socket.once("interview-session-started", onSessionStarted);
+      socket.once("error", onError);
+
+      // Ensure connected then emit
+      if (socket.connected) {
+        socket.emit("start-interview-session", sessionData);
       } else {
-        setCreatingInterview(false)
-        console.error("Interview creation failed", res.data);
-        toast.error("Failed to create interview. Please try again.", toastStyle(false));
+        socket.once("connect", () => {
+          console.log("✅ Socket connected to Flask; starting session...");
+          socket.emit("start-interview-session", sessionData);
+        });
       }
     } catch (error) {
-      setCreatingInterview(false)
-      console.error("Error creating interview:", error);
+      setCreatingInterview(false);
+      console.error("Error starting Flask interview:", error);
       toast.error("An error occurred while creating the interview.", toastStyle(false));
     }
-  }
-};
+  };
 
 
   // Enter fullscreen

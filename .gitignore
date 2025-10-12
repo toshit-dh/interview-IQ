@@ -1,0 +1,37 @@
+# Global ignores for this repo
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules/
+dist/
+build/
+
+# Env files and local configs
+.env
+**/.env
+*.local
+
+# Databases and local storage
+*.db
+*.sqlite
+*.sqlite3
+server-flask/interview_iq.db
+server-flask/interview_db.sqlite
+
+# Package locks can be large/noisy across multiple clients; keep if you prefer deterministic installs
+# Uncomment to ignore lock files repo-wide (client already has its own policy)
+# package-lock.json
+# yarn.lock
