@@ -8,6 +8,8 @@ Thumbs.db
 *.swp
 *.swo
 
+venv/
+
 # Python
 __pycache__/
 *.pyc
