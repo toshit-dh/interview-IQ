@@ -11,6 +11,8 @@ import base64
 import binascii
 import whisper
 import threading
+import time
+from collections import Counter
 
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit # pyright: ignore[reportMissingModuleSource]
@@ -21,6 +23,16 @@ import sqlite3
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Feature flags
+# When False, we disable all live coaching (no interim processing, no live warnings)
+LIVE_COACHING = False
+
+
+def get_db_connection(timeout=10.0):
+    conn = sqlite3.connect('interview_iq.db', timeout=timeout, check_same_thread=False)
+    conn.execute('PRAGMA journal_mode=WAL') 
+    return conn
+
 try:
     from ai_agents_simple import interview_ai
     AI_AVAILABLE = True
@@ -30,7 +42,7 @@ except Exception as e:
     interview_ai = None
     AI_AVAILABLE = False
 
-# Initialize Flask app
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'interview-iq-secret-key-2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
@@ -38,74 +50,120 @@ CORS(app)
 
 
 active_interviews = {}
+pause_monitors = {}
+
+def _pause_monitor(client_id: str):
+    if not LIVE_COACHING:
+        return
+    try:
+        while True:
+            sess = active_interviews.get(client_id)
+            if not sess:
+                break
+            if not sess.get('is_recording'):
+                break
+            tracker = (sess or {}).get('warning_tracker', {})
+            last_speech = tracker.get('last_speech_time') or sess.get('recording_start_time') or time.time()
+            last_warn = tracker.get('last_pause_warning', 0)
+            now = time.time()
+            if (now - last_speech) >= 8 and (now - last_warn) > 5 and (tracker.get('consecutive_empty', 0) >= 3):
+                try:
+                    socketio.emit('live-warning', {'message': 'Long pause detected - keep speaking', 'type': 'long_pause'}, to=client_id)
+                except Exception:
+                    pass
+                tracker['last_pause_warning'] = now
+                tracker['pause_events'] = tracker.get('pause_events', 0) + 1
+                sess['warning_tracker'] = tracker
+                active_interviews[client_id] = sess
+            time.sleep(0.4)
+    except Exception as mon_err:
+        logger.warning(f"Pause monitor ended for {client_id}: {mon_err}")
 
 sessions_by_id: Dict[str, Dict[str, Any]] = {}
 interview_sessions = {}
 
+
 try:
     logger.info("Loading Whisper model...")
-    whisper_model = whisper.load_model("base")  
+    whisper_model = whisper.load_model("base")
+    whisper_lock = threading.Lock()
     logger.info("✅ Whisper model loaded successfully")
 except Exception as e:
     logger.error(f"❌ Failed to load Whisper model: {str(e)}")
     whisper_model = None
+    whisper_lock = threading.Lock()
 
 def init_database():
-    conn = sqlite3.connect('interview_iq.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS interview_sessions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            difficulty TEXT NOT NULL,
-            llm TEXT NOT NULL,
-            interview_type TEXT NOT NULL,
-            persona TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            module_id TEXT NOT NULL,
-            path_id TEXT NOT NULL,
-            start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            end_time TIMESTAMP,
-            total_questions INTEGER DEFAULT 0,
-            completed_questions INTEGER DEFAULT 0,
-            overall_score REAL,
-            status TEXT DEFAULT 'active'
-        )
-    ''')
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS interview_sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                difficulty TEXT NOT NULL,
+                llm TEXT NOT NULL,
+                interview_type TEXT NOT NULL,
+                persona TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                path_id TEXT NOT NULL,
+                start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                end_time TIMESTAMP,
+                total_questions INTEGER DEFAULT 0,
+                completed_questions INTEGER DEFAULT 0,
+                overall_score REAL,
+                status TEXT DEFAULT 'active'
+            )
+        ''')
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS interview_questions (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            question_number INTEGER NOT NULL,
-            question_text TEXT NOT NULL,
-            answer_text TEXT,
-            transcription_result TEXT,
-            analysis_result TEXT,
-            quality_score REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES interview_sessions (id)
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS interview_answers (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            question_id TEXT,
-            audio_transcript TEXT,
-            answer_duration REAL,
-            filler_words_count INTEGER,
-            confidence_score REAL,
-            clarity_score REAL,
-            technical_accuracy REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES interview_sessions (id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    logger.info("✅ Database initialized successfully")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS interview_questions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                question_number INTEGER NOT NULL,
+                question_text TEXT NOT NULL,
+                answer_text TEXT,
+                transcription_result TEXT,
+                analysis_result TEXT,
+                quality_score REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES interview_sessions (id)
+            )
+        ''')
+      
+        try:
+            cursor.execute("PRAGMA table_info('interview_questions')")
+            cols = {row[1] for row in cursor.fetchall()} 
+           
+            if 'question_category' not in cols:
+                cursor.execute("ALTER TABLE interview_questions ADD COLUMN question_category TEXT DEFAULT 'general'")
+            if 'difficulty_level' not in cols:
+                cursor.execute("ALTER TABLE interview_questions ADD COLUMN difficulty_level TEXT DEFAULT 'Medium'")
+            if 'expected_duration' not in cols:
+                cursor.execute("ALTER TABLE interview_questions ADD COLUMN expected_duration INTEGER DEFAULT 120")
+        except Exception as alter_err:
+            logger.warning(f"⚠️ Could not ensure interview_questions columns: {alter_err}")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS interview_answers (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                question_id TEXT,
+                audio_transcript TEXT,
+                answer_duration REAL,
+                filler_words_count INTEGER,
+                confidence_score REAL,
+                clarity_score REAL,
+                technical_accuracy REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES interview_sessions (id)
+            )
+        ''')
+        
+        conn.commit()
+        logger.info("✅ Database initialized successfully")
+    finally:
+        conn.close()
 
 def map_subject_id_to_name(subject_id: str) -> str:
     subject_mappings = {
@@ -144,7 +202,7 @@ def map_subject_id_to_name(subject_id: str) -> str:
         'algorithms': 'algorithms and problem solving',
         'data-structures': 'data structures',
         
-        # System Design
+       
         'system-design': 'system design and architecture',
         'System Design': 'system design and architecture',
         'microservices': 'microservices architecture',
@@ -165,9 +223,14 @@ def map_subject_id_to_name(subject_id: str) -> str:
         'terraform': 'Terraform infrastructure',
         
        
-        'machine-learning': 'machine learning',
-        'Machine Learning': 'machine learning',
-        'ai': 'artificial intelligence',
+    'machine-learning': 'machine learning',
+    'Machine Learning': 'machine learning',
+    'ml': 'machine learning',
+    'ai-ml': 'artificial intelligence and machine learning',
+    'AI/ML': 'artificial intelligence and machine learning',
+    'AIML': 'artificial intelligence and machine learning',
+    'aiml': 'artificial intelligence and machine learning',
+    'ai': 'artificial intelligence',
         'data-science': 'data science',
         'deep-learning': 'deep learning',
         'nlp': 'natural language processing',
@@ -190,19 +253,29 @@ def analyze_speech(transcript):
             'wordCount': 0,
             'warnings': ['Empty or very short response']
         }
-    
-    words = transcript.lower().split()
+
+    words = (transcript or '').lower().split()
     word_count = len(words)
-    filler_words = ['uh', 'um', 'er', 'ah', 'like', 'you know', 'basically', 'actually','yeah','eeh','aah']
-    filler_count = sum(words.count(filler) for filler in filler_words)
-    filler_ratio = filler_count / word_count if word_count > 0 else 0
- 
+    filler_words = ['uh', 'um', 'er', 'ah', 'like', 'you know', 'basically', 'actually', 'yeah', 'eeh', 'aah','the the','oh','ohh','hmm','om']
+   
+    token_filler_count = 0
+    for f in filler_words:
+        if ' ' not in f:
+            token_filler_count += sum(1 for w in words if w == f)
+    text = ' '.join(words)
+    phrase_filler_count = 0
+    for f in filler_words:
+        if ' ' in f:
+            phrase_filler_count += text.count(f)
+    filler_count = token_filler_count + phrase_filler_count
+    filler_ratio = filler_count / word_count if word_count > 0 else 0.0
+
     warnings = []
     if word_count < 10:
         quality = 'red'
         warnings.append('Response too short')
     elif filler_ratio > 0.15:
-        quality = 'red' 
+        quality = 'red'
         warnings.append('Too many filler words')
     elif filler_ratio > 0.08:
         quality = 'yellow'
@@ -211,12 +284,12 @@ def analyze_speech(transcript):
         quality = 'green'
     else:
         quality = 'yellow'
-    
+
     return {
         'quality': quality,
         'fillerWords': filler_count,
         'wordCount': word_count,
-        'fillerRatio': filler_ratio,
+        'fillerRatio': round(filler_ratio, 3),
         'warnings': warnings
     }
 
@@ -226,31 +299,268 @@ init_database()
 @socketio.on('connect')
 def handle_connect():
     
-    client_id = request.sid
+    client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
     logger.info(f"🔌 Client connected: {client_id}")
     emit('connected', {'clientId': client_id})
+
+def _send_current_question(client_id: str, session_id: str):
+    try:
+        if client_id not in active_interviews:
+            return
+        sess = active_interviews[client_id]
+        current_q = int(sess.get('current_question') or 1)
+        total = int(sess.get('max_questions') or 10)
+        question_text = None
+        
+        if isinstance(sess.get('questions'), dict) and current_q in sess['questions']:
+            question_text = sess['questions'][current_q]
+        else:
+           
+            try:
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT question_text FROM interview_questions
+                        WHERE session_id = ? AND question_number = ?
+                    ''', (session_id, current_q))
+                    row = cursor.fetchone()
+                    if row:
+                        question_text = row[0]
+                finally:
+                    conn.close()
+            except Exception as db_err:
+                logger.error(f"❌ Failed to fetch current question from DB: {db_err}")
+        if question_text:
+            emit('interview-question', {
+                'questionText': question_text,
+                'questionNumber': current_q,
+                'totalQuestions': total,
+                'category': sess.get('module_name') or sess.get('config', {}).get('subject') or 'General',
+                'questionId': f"{session_id}_q{current_q}"
+            })
+    except Exception as e:
+        logger.error(f"❌ _send_current_question failed: {e}")
+
+@socketio.on('get-current-question')
+def handle_get_current_question(data):
+    try:
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
+        session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
+        if not session_id:
+          
+            sess = active_interviews.get(client_id)
+            session_id = sess.get('session_id') if sess else None
+        if not session_id:
+            emit('error', {'message': 'No session to fetch current question'})
+            return
+        _send_current_question(client_id, session_id)
+    except Exception as e:
+        logger.error(f"Error in get-current-question: {e}")
+        emit('error', {'message': f'Failed to get current question: {str(e)}'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
     
-    client_id = request.sid
+    client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
     logger.info(f"🔌 Client disconnected: {client_id}")
     
     
     if client_id in active_interviews:
         session_id = active_interviews[client_id].get('session_id')
         if session_id:
-            # Preserve session for potential resume on reconnect
+           
             sessions_by_id[session_id] = active_interviews[client_id]
             sessions_by_id[session_id]['last_client_id'] = client_id
             logger.info(f"🧹 Detached client {client_id} from session {session_id} (session preserved for resume)")
-        # Remove the sid mapping only
         del active_interviews[client_id]
 
 
 @socketio.on('audio-chunk') 
-def handle_audio_chunk(audio_data):    
-    logger.info("🎤 Audio chunk received but real-time processing is disabled")
+def handle_audio_chunk(data):
+    try:
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
+        audio_data = (data or {}).get('audioData')
+        provided_session_id = (data or {}).get('sessionId')
+        
+        if not audio_data:
+            return
+        if client_id not in active_interviews:
+            logger.warning(f"⚠️ Client {client_id} not in active_interviews, skipping chunk")
+            return
+
+
+        if 'chunk_buffer' not in active_interviews[client_id]:
+            active_interviews[client_id]['chunk_buffer'] = []
+            active_interviews[client_id]['buffer_start_time'] = time.time()
+            active_interviews[client_id]['warning_tracker'] = {
+                'last_filler_warning': 0,
+                'last_pause_warning': 0,
+                'last_speech_time': time.time(),
+                'filler_count_session': 0
+            }
+
+        try:
+            clean_audio_data = audio_data.strip()
+            if clean_audio_data.startswith('data:'):
+                clean_audio_data = clean_audio_data.split(',')[1]
+            
+            audio_bytes = base64.b64decode(clean_audio_data)
+            active_interviews[client_id]['chunk_buffer'].append(audio_bytes)
+            
+           
+            current_time = time.time()
+            buffer_duration = current_time - active_interviews[client_id]['buffer_start_time']
+            
+            if buffer_duration >= 3.0:  
+               
+                combined_audio = b''.join(active_interviews[client_id]['chunk_buffer'])
+                logger.info(f"🎤 Processed 3s buffer: {len(combined_audio)} bytes (no heuristic warnings)"
+                active_interviews[client_id]['chunk_buffer'] = []
+                active_interviews[client_id]['buffer_start_time'] = current_time
+                
+        except Exception as decode_error:
+            logger.error(f"❌ Chunk decode failed: {decode_error}")
+            
+    except Exception as e:
+        logger.error(f"❌ Chunk processing failed: {e}")
+
+@socketio.on('process-interim-audio')
+def handle_process_interim_audio(data):
+  
+    if not LIVE_COACHING:
+        return
+    try:
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
+        audio_data = (data or {}).get('audioData')
+        if not audio_data:
+            return
+
+        clean_audio_data = audio_data.strip()
+        if clean_audio_data.startswith('data:'):
+            clean_audio_data = clean_audio_data.split(',')[1]
+
+        audio_bytes = base64.b64decode(clean_audio_data)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_file:
+            temp_file.write(audio_bytes)
+            temp_file_path = temp_file.name
+
+        transcript = ""
+        try:
+            if whisper_model:
+                with whisper_lock:
+                    result = whisper_model.transcribe(
+                        temp_file_path,
+                        language='en',
+                        fp16=False,
+                        condition_on_previous_text=False
+                    )
+                raw_text = result.get('text', '')
+                if isinstance(raw_text, list):
+                    transcript = ' '.join(str(t) for t in raw_text).strip()
+                else:
+                    transcript = (raw_text or '').strip()
+        except Exception as e:
+            logger.error(f"❌ Interim transcription failed: {e}")
+        finally:
+            try:
+                os.unlink(temp_file_path)
+            except Exception:
+                pass
+
+        sess = active_interviews.get(client_id, {})
+        tracker = sess.get('warning_tracker', {
+            'last_filler_warning': 0,
+            'last_pause_warning': 0,
+            'last_speech_time': time.time(),
+            'last_length_warning': 0,
+            'last_repeat_warning': 0,
+            'filler_count_session': 0,
+            'consecutive_empty': 0,
+            'pause_events': 0
+        })
+        now = time.time()
+        if not transcript:
+            tracker['consecutive_empty'] = tracker.get('consecutive_empty', 0) + 1
+            last_speech = tracker.get('last_speech_time') or now
+           
+            if (now - last_speech) >= 6 and (now - tracker.get('last_pause_warning', 0)) > 5:
+                emit('live-warning', {'message': 'Long pause detected - keep speaking', 'type': 'long_pause'})
+                tracker['last_pause_warning'] = now
+                tracker['pause_events'] = tracker.get('pause_events', 0) + 1
+            sess['warning_tracker'] = tracker
+            active_interviews[client_id] = sess
+            return
+        else:
+            tracker['consecutive_empty'] = 0
+
+        lower = transcript.lower()
+        words = lower.split()
+        word_count = len(words)
+        fillers = re.findall(r"\b(um+|uh+|uhm+|umm+|hmm+|er+|ah+|yeah|so|well|like|you know|i mean|actually|basically|literally|sort of|kind of)\b", lower)
+        tracker['filler_count_session'] = tracker.get('filler_count_session', 0) + len(fillers)
+        if word_count >= 1:
+            tracker['last_speech_time'] = now
+       
+        bigrams = list(zip(words, words[1:]))
+        from collections import Counter as _Ctr
+        bc = _Ctr(bigrams)
+        top_bg = max(bc.values()) if bc else 0
+        consec = sum(1 for i in range(1, len(words)) if words[i] == words[i-1])
+        repetition_hits = (sum(1 for c in bc.values() if c >= 2)) + consec
+        tracker['repetition_count_session'] = tracker.get('repetition_count_session', 0) + repetition_hits
+        
+        token_runs = 0
+        run_len = 1
+        for i in range(1, len(words)):
+            if words[i] == words[i-1]:
+                run_len += 1
+            else:
+                if run_len >= 3:
+                    token_runs += (run_len - 2)
+                run_len = 1
+        if run_len >= 3:
+            token_runs += (run_len - 2)
+        if token_runs:
+            tracker['filler_count_session'] = tracker.get('filler_count_session', 0) + token_runs
+
+        
+        filler_density = (len(fillers) / max(word_count, 1)) if word_count else 0
+        if (now - tracker.get('last_filler_warning', 0)) > 3:
+            if (len(fillers) >= 1) or (filler_density >= 0.12) or (consec >= 2):
+                emit('live-warning', {'message': 'Too many filler words detected', 'type': 'filler_words'})
+                tracker['last_filler_warning'] = now
+
+        
+        if word_count <= 2:
+            
+            last_speech = tracker.get('last_speech_time') or now
+            if (now - tracker.get('last_pause_warning', 0)) > 5 and (now - last_speech) >= 6:
+                emit('live-warning', {'message': 'Long pause detected - keep speaking', 'type': 'long_pause'})
+                tracker['last_pause_warning'] = now
+                tracker['pause_events'] = tracker.get('pause_events', 0) + 1
+
+       
+        if (top_bg >= 3 or consec >= 2) and (now - tracker.get('last_repeat_warning', 0)) > 8:
+            emit('live-warning', {'message': 'You seem to be repeating—try rephrasing', 'type': 'repetition'})
+            tracker['last_repeat_warning'] = now
+
+        start_ts = sess.get('recording_start_time')
+        if start_ts and (now - start_ts) > 40 and (now - tracker.get('last_length_warning', 0)) > 20:
+            emit('live-warning', {'message': 'Answer is getting long, start wrapping up', 'type': 'length'})
+            tracker['last_length_warning'] = now
+
+        # Repetition heuristic: many repeated tokens (cooldown 10s)
+        unique_ratio = len(set(words)) / max(word_count, 1)
+        if word_count >= 10 and unique_ratio < 0.5 and (now - tracker.get('last_repeat_warning', 0)) > 10:
+            emit('live-warning', {'message': 'You seem to be repeating words—try rephrasing', 'type': 'repetition'})
+            tracker['last_repeat_warning'] = now
+
+        sess['warning_tracker'] = tracker
+        active_interviews[client_id] = sess
+    except Exception as e:
+        logger.error(f"❌ Process interim audio failed: {e}")
 
 @socketio.on('process-complete-audio')
 def handle_complete_audio(data):
@@ -259,6 +569,25 @@ def handle_complete_audio(data):
         client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         audio_data = (data or {}).get('audioData')
         provided_session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
+
+        
+        try:
+            session_id_check = provided_session_id
+            if not session_id_check and client_id in active_interviews:
+                session_id_check = active_interviews[client_id].get('session_id')
+            if session_id_check:
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT status FROM interview_sessions WHERE id = ?", (session_id_check,))
+                    row = cur.fetchone()
+                    if row and str(row[0]).lower() == 'completed':
+                        logger.info(f"🛑 Ignoring complete-audio: session {session_id_check} already completed")
+                        return
+                finally:
+                    conn.close()
+        except Exception as _guard_err:
+            logger.warning(f"Guard check failed: {_guard_err}")
 
         if not audio_data:
             emit('audio-error', {'message': 'No audio data received'})
@@ -271,7 +600,7 @@ def handle_complete_audio(data):
         if clean_audio_data.startswith('data:'):
             clean_audio_data = clean_audio_data.split(',')[1]
 
-        # Decode and persist to temp file for Whisper
+       
         audio_bytes = base64.b64decode(clean_audio_data)
         logger.info(f"🎤 Decoded audio: {len(audio_bytes)} bytes")
 
@@ -288,26 +617,43 @@ def handle_complete_audio(data):
                 if audio_size < 5000:
                     logger.warning(f"⚠️ Audio file too small ({audio_size} bytes), skipping transcription")
                 else:
-                    result = whisper_model.transcribe(
-                        temp_file_path,
-                        language='en',
-                        fp16=False,
-                        condition_on_previous_text=False
-                    )
-                    transcript = (result.get('text', '') or '').strip()
-                    if isinstance(transcript, list):
-                        transcript = ' '.join(transcript).strip()
+                    logger.info(f"🎤 Starting Whisper transcription...")
+                    
+                    with whisper_lock:
+                        result = whisper_model.transcribe(
+                            temp_file_path,
+                            language='en',
+                            fp16=False,
+                            condition_on_previous_text=False
+                        )
+                    logger.info(f"🎤 Whisper result type: {type(result)}")
+                    logger.info(f"🎤 Whisper result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+                    logger.info(f"🎤 Raw text from Whisper: '{result.get('text', 'NO TEXT KEY')}' (type: {type(result.get('text'))})")
+                    raw_text = result.get('text', '')
+                    if isinstance(raw_text, list):
+                        transcript = ' '.join(str(t) for t in raw_text).strip()
+                    else:
+                        transcript = (raw_text or '').strip()
+                    
+                    logger.info(f"🎤 Transcript length: {len(transcript)} chars")
                     print(f"🗣️ TRANSCRIBED TEXT: '{transcript}'")
                     logger.info(f"🗣️ Complete transcript: '{transcript}'")
+                    
+                    # Check if audio has speech
+                    if not transcript:
+                        logger.warning(f"⚠️ Empty transcript! Audio might be silent or corrupted")
+                        logger.warning(f"⚠️ Try speaking louder or check microphone")
         except Exception as whisper_error:
             logger.error(f"❌ Whisper transcription failed: {whisper_error}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
 
-        # Optional AI analysis
+       
         insights = []
         analysis = {}
         try:
             if transcript and AI_AVAILABLE and interview_ai:
-                analysis_result = interview_ai.analyze_response(transcript, 30.0, {})
+                analysis_result = interview_ai.analyze_response(str(transcript), 30.0, {})
                 analysis = analysis_result if analysis_result else {}
                 if analysis.get('filler_words_count', 0) > 3:
                     insights.append("Try to reduce filler words like 'um', 'ah' for clearer communication")
@@ -320,7 +666,7 @@ def handle_complete_audio(data):
         except Exception as ai_error:
             logger.error(f"❌ AI analysis failed: {ai_error}")
 
-        # Store transcript against session
+        
         try:
             if client_id in active_interviews:
                 active_interviews[client_id].setdefault('transcripts', []).append(transcript)
@@ -346,7 +692,7 @@ def handle_complete_audio(data):
         except Exception as store_err:
             logger.error(f"❌ Failed to store transcript: {store_err}")
 
-        # Send basic speech analysis back immediately for UI feedback
+       
         simple_analysis = analyze_speech(transcript)
         emit('audio-transcription', {
             'transcript': transcript,
@@ -354,7 +700,71 @@ def handle_complete_audio(data):
             'success': True
         })
 
-        # Cleanup temp file
+       
+        try:
+            sess = active_interviews.get(client_id) or (sessions_by_id.get(provided_session_id) if provided_session_id else None)
+            if sess:
+                qid = sess.get('last_saved_question_id')
+                if not qid:
+                 
+                    try:
+                        cq = int(sess.get('current_question') or 1)
+                        qid = f"q{max(1, cq-1)}_{sess.get('session_id')}"
+                    except Exception:
+                        qid = None
+                if qid:
+                    fillers = int(simple_analysis.get('fillerWords', 0) or 0)
+                    
+                    qnum = None
+                    try:
+                        import re as _re
+                        m = _re.match(r"q(\d+)_", qid)
+                        if m:
+                            qnum = int(m.group(1))
+                    except Exception:
+                        qnum = None
+                    with get_db_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            """
+                            UPDATE interview_answers
+                            SET audio_transcript = ?, filler_words_count = COALESCE(?, filler_words_count)
+                            WHERE session_id = ? AND question_id = ?
+                            """,
+                            (transcript, fillers, sess.get('session_id'), qid)
+                        )
+                        conn.commit()
+                        logger.info(f"📝 Updated answer row with final transcript (qid={qid}, fillers={fillers})")
+                   
+                    try:
+                        
+                        insights_list = []
+                        try:
+                            if qnum is not None:
+                                if fillers is not None:
+                                    insights_list.append(f"Q{qnum}: {fillers} filler word(s) detected")
+                        except Exception:
+                            pass
+                        
+                        repetition = int(simple_analysis.get('repetitionCount', 0) or 0)
+                        if qnum is not None and repetition >= 2:
+                            insights_list.append(f"Q{qnum}: repetition detected ({repetition})")
+                        payload = {
+                            'isUpdate': True,
+                            'questionNumber': qnum or max(1, int(sess.get('current_question') or 1) - 1),
+                            'scores': {
+                                'filler_words_count': fillers,
+                                'repetition_count': repetition,
+                            }
+                        }
+                        if insights_list:
+                            payload['insights'] = insights_list
+                        socketio.emit('interview-feedback', payload, to=client_id)
+                    except Exception as emit_err:
+                        logger.warning(f"Could not emit feedback update: {emit_err}")
+        except Exception as upd_err:
+            logger.warning(f"Could not update answer with transcript: {upd_err}")
+
         try:
             os.unlink(temp_file_path)
         except Exception:
@@ -402,7 +812,7 @@ def handle_start_interview(data):
 @socketio.on('next-question')
 def handle_next_question(data):
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         
         if client_id not in active_interviews:
             emit('error', {'message': 'No active interview session'})
@@ -416,7 +826,7 @@ def handle_next_question(data):
         if next_q < len(questions):
             interview_data['current_question'] = next_q
             emit('next-question', {
-                'question': questions[next_q],
+                'questionText': questions[next_q],
                 'questionNumber': next_q + 1,
                 'totalQuestions': len(questions)
             })
@@ -433,7 +843,7 @@ def handle_next_question(data):
 @socketio.on('recording-start')
 def handle_recording_start(data):
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
         sess = None
         if client_id in active_interviews:
@@ -443,15 +853,36 @@ def handle_recording_start(data):
             active_interviews[client_id] = sess
         if sess is not None:
             sess['is_recording'] = True
+            sess['recording_start_time'] = time.time()
+           
+            sess['warning_tracker'] = {
+                'last_filler_warning': 0,
+                'last_pause_warning': 0,
+                'last_speech_time': time.time(),
+                'last_length_warning': 0,
+                'last_repeat_warning': 0,
+                'filler_count_session': 0,
+                'consecutive_empty': 0,
+                'pause_events': 0
+            }
             logger.info(f"🎤 Recording started for client {client_id} (session {sess.get('session_id')})")
             emit('recording-started', {'status': 'Recording started'})
+            # start pause monitor thread
+            if LIVE_COACHING:
+                try:
+                    if client_id not in pause_monitors or not pause_monitors[client_id].is_alive():
+                        t = threading.Thread(target=_pause_monitor, args=(client_id,), daemon=True)
+                        pause_monitors[client_id] = t
+                        t.start()
+                except Exception as mon_err:
+                    logger.warning(f"Could not start pause monitor: {mon_err}")
     except Exception as e:
         logger.error(f"Error starting recording: {str(e)}")
 
 @socketio.on('recording-stop')
 def handle_recording_stop(data):
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
         sess = None
         if client_id in active_interviews:
@@ -461,19 +892,53 @@ def handle_recording_stop(data):
             active_interviews[client_id] = sess
         if sess is not None:
             sess['is_recording'] = False
+            try:
+                sess['last_recording_stop_time'] = time.time()
+            except Exception:
+                pass
             logger.info(f"🎤 Recording stopped for client {client_id} (session {sess.get('session_id')})")
             emit('recording-stopped', {'status': 'Recording stopped'})
+           
     except Exception as e:
         logger.error(f"Error stopping recording: {str(e)}")
 
 @socketio.on('resume-interview-session')
 def handle_resume_interview_session(data):
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
         if not session_id:
             emit('error', {'message': 'Missing sessionId for resume'})
             return
+       
+        if session_id not in sessions_by_id:
+            try:
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT id, difficulty, subject FROM interview_sessions WHERE id = ?', (session_id,))
+                    row = cursor.fetchone()
+                    if row:
+                       
+                        cursor.execute('SELECT COUNT(1) FROM interview_answers WHERE session_id = ?', (session_id,))
+                        count_row = cursor.fetchone()
+                        answered = count_row[0] if count_row else 0
+                        reconstructed = {
+                            'session_id': session_id,
+                            'difficulty': row[1] or 'Medium',
+                            'module_name': row[2] or 'General',
+                            'current_question': max(1, answered + 1),
+                            'max_questions': 10,
+                            'answers': [],
+                            'transcripts': [],
+                            'is_recording': False
+                        }
+                        sessions_by_id[session_id] = reconstructed
+                        logger.info(f"🧩 Reconstructed session {session_id} from DB for resume (answered={answered})")
+                finally:
+                    conn.close()
+            except Exception as recon_err:
+                logger.error(f"❌ Resume reconstruction failed for {session_id}: {recon_err}")
         if session_id not in sessions_by_id:
             emit('error', {'message': 'Session not found for resume'})
             return
@@ -481,6 +946,11 @@ def handle_resume_interview_session(data):
         active_interviews[client_id]['client_id'] = client_id
         logger.info(f"🔗 Session {session_id} resumed for client {client_id}")
         emit('interview-session-started', {'sessionId': session_id, 'status': 'Session resumed successfully'})
+       
+        try:
+            _send_current_question(client_id, session_id)
+        except Exception as qerr:
+            logger.error(f"❌ Failed to send current question on resume: {qerr}")
     except Exception as e:
         logger.error(f"Error resuming interview session: {str(e)}")
         emit('error', {'message': f'Failed to resume interview session: {str(e)}'})
@@ -489,40 +959,56 @@ def handle_resume_interview_session(data):
 def handle_start_interview_session(data):
    
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         logger.info(f"🚀 Start interview session called by {client_id} with data: {data}")
         
         config = data.get('config', {})
         metadata = data.get('metadata', {})
+
         
-        # Create session ID
+        if client_id in active_interviews and active_interviews[client_id].get('session_id'):
+            existing = active_interviews[client_id]
+            logger.info(f"♻️ Reusing existing session {existing.get('session_id')} for client {client_id}")
+            emit('interview-session-started', {
+                'sessionId': existing.get('session_id'),
+                'status': 'Session already active'
+            })
+            try:
+                _send_current_question(client_id, existing.get('session_id'))
+            except Exception as qerr:
+                logger.error(f"❌ Failed to resend current question on reuse: {qerr}")
+            return
+        
+        
         session_id = str(uuid.uuid4())
         
-        # Store in database
-        conn = sqlite3.connect('interview_iq.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO interview_sessions 
-            (id, difficulty, llm, interview_type, persona, subject, module_id, path_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            session_id,
-            config.get('difficulty', 'Medium'),
-            config.get('llm', 'ChatGPT'),
-            config.get('interviewType', 'general'),
-            config.get('persona', 'professional_man'),
-            config.get('subject', 'general'),
-            config.get('moduleId', 'default'),
-            config.get('pathId', 'default')
-        ))
-        conn.commit()
-        conn.close()
         
-        # Extract module info for question generation
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO interview_sessions 
+                (id, difficulty, llm, interview_type, persona, subject, module_id, path_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                session_id,
+                config.get('difficulty', 'Medium'),
+                config.get('llm', 'ChatGPT'),
+                config.get('interviewType', 'general'),
+                config.get('persona', 'professional_man'),
+                config.get('subject', 'general'),
+                config.get('moduleId', 'default'),
+                config.get('pathId', 'default')
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+        
+      
         module_name = config.get('subject', 'General Interview')
         difficulty = config.get('difficulty', 'Medium')
         
-        # Generate first question only (dynamic generation approach)
+        
         first_question = None
         if AI_AVAILABLE and interview_ai:
             try:
@@ -576,14 +1062,76 @@ def handle_start_interview_session(data):
         
         
         if first_question:
+            
+            try:
+                qid = str(uuid.uuid4())
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                 
+                    cursor.execute("PRAGMA table_info('interview_questions')")
+                    cols = {row[1] for row in cursor.fetchall()}
+                    base_values = [
+                        ('id', qid),
+                        ('session_id', session_id),
+                        ('question_number', 1),
+                        ('question_text', first_question)
+                    ]
+                    if 'question_category' in cols:
+                        base_values.append(('question_category', module_name or config.get('subject', 'general')))
+                    if 'difficulty_level' in cols:
+                        base_values.append(('difficulty_level', difficulty or config.get('difficulty', 'Medium')))
+                    if 'expected_duration' in cols:
+                      
+                        exp = (data.get('config', {}).get('expectedDuration') if isinstance(data, dict) else None)
+                        if not isinstance(exp, (int, float)):
+                            exp = 90 if (difficulty or '').lower() == 'easy' else 120 if (difficulty or '').lower() == 'medium' else 150
+                        base_values.append(('expected_duration', int(exp)))
+                    col_names = ", ".join(name for name, _ in base_values)
+                    placeholders = ", ".join(['?'] * len(base_values))
+                    values = [val for _, val in base_values]
+                    cursor.execute(f"INSERT INTO interview_questions ({col_names}) VALUES ({placeholders})", values)
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as dbq_err:
+                logger.error(f"❌ Failed to persist first question: {dbq_err}")
+
+           
+            active_interviews[client_id]['questions'] = {1: first_question}
+
             emit('interview-question', {
-                'questionText': first_question,  
+                'questionText': first_question,
                 'questionNumber': 1,
-                'totalQuestions': 10,  
+                'totalQuestions': 10,
                 'category': module_name,
                 'questionId': f"{session_id}_q1"
             })
             logger.info(f"🎯 Sent first question: {first_question[:50]}...")
+
+           
+            try:
+                if AI_AVAILABLE and interview_ai:
+                    subject_name = map_subject_id_to_name(module_name)
+                    def _prefetch_first(sess_key: str, subject: str, diff: str):
+                        try:
+                            prefetch = interview_ai.generate_question(  # pyright: ignore[reportOptionalMemberAccess]
+                                difficulty=diff,
+                                subject=subject,
+                                persona='professional_man',
+                                question_number=2,
+                                previous_answers=[]
+                            )
+                            if prefetch and (prefetch.get('question') or prefetch.get('question_text')):
+                                ai = active_interviews.get(sess_key)
+                                if ai:
+                                    ai.setdefault('prefetch', {})[2] = prefetch.get('question') or prefetch.get('question_text')
+                                    logger.info("⚡ Prefetched question 2")
+                        except Exception as e:
+                            logger.warning(f"Prefetch failed: {e}")
+                    threading.Thread(target=_prefetch_first, args=(client_id, subject_name, difficulty), daemon=True).start()
+            except Exception as pre_err:
+                logger.warning(f"Prefetch setup failed: {pre_err}")
         
         logger.info(f"✅ Interview session {session_id} created and first question sent to client {client_id}")
         
@@ -594,7 +1142,7 @@ def handle_start_interview_session(data):
 @socketio.on('initialize-interview')
 def handle_initialize_interview(data):
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         module_name = data.get('moduleName', 'General Interview')
         difficulty = data.get('difficulty', 'Medium')
         
@@ -625,7 +1173,7 @@ def handle_initialize_interview(data):
                 logger.error(f"AI question generation failed: {ai_error}")
                 questions = []
         
-        # Fallback questions if AI fails
+     
         if not questions:
             questions = [
                 f"Tell me about your experience with {module_name}.",
@@ -641,10 +1189,11 @@ def handle_initialize_interview(data):
         active_interviews[client_id]['difficulty'] = difficulty
         
         emit('interview-question', {
-            'question': questions[0],
+            'questionText': questions[0],
             'questionNumber': 1,
             'totalQuestions': len(questions),
-            'moduleName': module_name
+            'category': module_name,
+            'questionId': f"{active_interviews[client_id]['session_id']}_q1"
         })
         
         logger.info(f"✅ Interview initialized with {len(questions)} questions")
@@ -657,13 +1206,12 @@ def handle_initialize_interview(data):
 def handle_answer_complete(data):
    
     try:
-        client_id = request.sid
+        client_id = request.sid  # pyright: ignore[reportAttributeAccessIssue]
         provided_session_id = (data or {}).get('sessionId') or (data or {}).get('session_id')
 
         logger.info(f"🔍 DEBUG: answer-complete called by client_id: {client_id}, sessionId={provided_session_id}")
         logger.info(f"🔍 DEBUG: active_interviews keys: {list(active_interviews.keys())}")
 
-        # Resolve interview session
         interview_data = None
         if client_id in active_interviews:
             interview_data = active_interviews[client_id]
@@ -672,31 +1220,33 @@ def handle_answer_complete(data):
             active_interviews[client_id] = interview_data
             logger.info(f"🔗 Bound existing session {provided_session_id} to client {client_id}")
         elif provided_session_id:
-            # Attempt a minimal reconstruction from DB so we don't hard fail
+           
             try:
-                conn = sqlite3.connect('interview_iq.db')
-                cursor = conn.cursor()
-                cursor.execute('SELECT id, difficulty, subject FROM interview_sessions WHERE id = ?', (provided_session_id,))
-                row = cursor.fetchone()
-                if row:
-                    # Find how many answers exist to set the next question number
-                    cursor.execute('SELECT COUNT(1) FROM interview_answers WHERE session_id = ?', (provided_session_id,))
-                    count_row = cursor.fetchone()
-                    answered = count_row[0] if count_row else 0
-                    interview_data = {
-                        'session_id': provided_session_id,
-                        'difficulty': row[1] or 'Medium',
-                        'module_name': row[2] or 'General',
-                        'current_question': max(1, answered + 1),
-                        'max_questions': 10,
-                        'answers': [],
-                        'transcripts': [],
-                        'is_recording': False
-                    }
-                    sessions_by_id[provided_session_id] = interview_data
-                    active_interviews[client_id] = interview_data
-                    logger.info(f"🧩 Reconstructed minimal session state for {provided_session_id} (answered={answered})")
-                conn.close()
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT id, difficulty, subject FROM interview_sessions WHERE id = ?', (provided_session_id,))
+                    row = cursor.fetchone()
+                    if row:
+                       
+                        cursor.execute('SELECT COUNT(1) FROM interview_answers WHERE session_id = ?', (provided_session_id,))
+                        count_row = cursor.fetchone()
+                        answered = count_row[0] if count_row else 0
+                        interview_data = {
+                            'session_id': provided_session_id,
+                            'difficulty': row[1] or 'Medium',
+                            'module_name': row[2] or 'General',
+                            'current_question': max(1, answered + 1),
+                            'max_questions': 10,
+                            'answers': [],
+                            'transcripts': [],
+                            'is_recording': False
+                        }
+                        sessions_by_id[provided_session_id] = interview_data
+                        active_interviews[client_id] = interview_data
+                        logger.info(f"🧩 Reconstructed minimal session state for {provided_session_id} (answered={answered})")
+                finally:
+                    conn.close()
             except Exception as recon_err:
                 logger.error(f"❌ Failed to reconstruct session {provided_session_id}: {recon_err}")
 
@@ -708,6 +1258,17 @@ def handle_answer_complete(data):
         max_questions = interview_data['max_questions']
         
         logger.info(f"📝 Answer completed for question {current_q}")
+
+        try:
+            pre_len = len(interview_data.get('transcripts', []))
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                now_len = len(interview_data.get('transcripts', []))
+                if now_len > pre_len:
+                    break
+                time.sleep(0.05)
+        except Exception:
+            pass
         
       
         transcripts = interview_data.get('transcripts', [])
@@ -719,46 +1280,86 @@ def handle_answer_complete(data):
         
         if latest_analysis and latest_analysis.get('analysis'):
             analysis_data = latest_analysis['analysis']
-            confidence_score = analysis_data.get('confidence_score', 70)
-            clarity_score = analysis_data.get('clarity_score', 70)
+            confidence_score = analysis_data.get('confidence_score', 60)
+            clarity_score = analysis_data.get('clarity_score', 60)
             technical_accuracy = analysis_data.get('technical_accuracy', 70)
             filler_words_count = analysis_data.get('filler_words_count', 0)
         else:
-            # Default scores for empty/poor responses
+           
             confidence_score = 40 if not latest_transcript else 70
             clarity_score = 40 if not latest_transcript else 70
             technical_accuracy = 40 if not latest_transcript else 70
             filler_words_count = 0
+
         
-        # Store answer in database
+        tracker = interview_data.get('warning_tracker', {}) if isinstance(interview_data, dict) else {}
+        interim_fillers = int(tracker.get('filler_count_session', 0) or 0)
+        interim_pauses = int(tracker.get('pause_events', 0) or 0)
+        interim_repetition = int(tracker.get('repetition_count_session', 0) or 0)
+        filler_words_count = max(int(filler_words_count or 0), interim_fillers)
+        start_ts = interview_data.get('recording_start_time') if isinstance(interview_data, dict) else None
+        stop_ts = interview_data.get('last_recording_stop_time') if isinstance(interview_data, dict) else None
+        if not stop_ts:
+            try:
+                stop_ts = time.time()
+            except Exception:
+                stop_ts = None
+        answer_duration = round(max(0.0, (stop_ts - start_ts)), 1) if start_ts else 30.0
+        
+        try:
+            clarity_penalty = min(10, filler_words_count * 1) + min(12, interim_pauses * 3) + min(10, interim_repetition * 1)
+            clarity_score = max(0, min(100, clarity_score - clarity_penalty))
+        except Exception:
+            pass
+        empty_answer = False
+        try:
+            empty_answer = not (latest_transcript or '').strip()
+            if empty_answer:
+                try:
+                    emit('live-warning', {
+                        'message': 'No answer detected for this question. Try to speak at least a full sentence next time.',
+                        'type': 'no_answer'
+                    })
+                except Exception:
+                    pass
+        except Exception:
+            empty_answer = False
+        
         try:
             answer_id = str(uuid.uuid4())
-            conn = sqlite3.connect('interview_iq.db')
-            cursor = conn.cursor()
-            
-           
-            question_id = f"q{current_q}_{interview_data['session_id']}"
-            
-            cursor.execute('''
-                INSERT INTO interview_answers 
-                (id, session_id, question_id, audio_transcript, answer_duration, 
-                 filler_words_count, confidence_score, clarity_score, technical_accuracy)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                answer_id,
-                interview_data['session_id'],
-                question_id,
-                latest_transcript,
-                30.0,  # Default duration
-                filler_words_count,
-                confidence_score,
-                clarity_score,
-                technical_accuracy
-            ))
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"💾 Stored answer in database with scores: confidence={confidence_score}, clarity={clarity_score}")
+            conn = get_db_connection()
+            try:
+                cursor = conn.cursor()
+                
+               
+                question_id = f"q{current_q}_{interview_data['session_id']}"
+                
+                cursor.execute('''
+                    INSERT INTO interview_answers 
+                    (id, session_id, question_id, audio_transcript, answer_duration, 
+                     filler_words_count, confidence_score, clarity_score, technical_accuracy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    answer_id,
+                    interview_data['session_id'],
+                    question_id,
+                    latest_transcript,
+                    float(answer_duration),
+                    filler_words_count,
+                    confidence_score,
+                    clarity_score,
+                    technical_accuracy
+                ))
+                conn.commit()
+                
+                logger.info(f"💾 Stored answer in database with scores: confidence={confidence_score}, clarity={clarity_score}")
+                try:
+                    
+                    interview_data['last_saved_question_id'] = question_id
+                except Exception:
+                    pass
+            finally:
+                conn.close()
             
         except Exception as db_error:
             logger.error(f"❌ Database storage failed: {db_error}")
@@ -774,6 +1375,7 @@ def handle_answer_complete(data):
                 'technical_accuracy': technical_accuracy,
                 'filler_words_count': filler_words_count
             },
+            'duration': answer_duration,
             'processed': True
         }
         
@@ -781,7 +1383,7 @@ def handle_answer_complete(data):
             interview_data['answers'] = []
         interview_data['answers'].append(answer_data)
         
-        # Send feedback to client for answer quality boxes
+        
         feedback = {
             'insights': [],
             'scores': {
@@ -789,23 +1391,48 @@ def handle_answer_complete(data):
                 'filler_words_count': filler_words_count,
                 'confidence_score': confidence_score,
                 'clarity_score': clarity_score,
-                'technical_accuracy': technical_accuracy
+                'technical_accuracy': technical_accuracy,
+               
+                'pause_events': interim_pauses,
+                'repetition_count': interim_repetition,
+                'answer_duration': answer_duration,
+                'empty_answer': empty_answer
             },
             'suggestions': [
                 'Great job providing specific examples' if confidence_score >= 80 else 'Try to speak with more confidence',
                 'Clear communication' if clarity_score >= 80 else 'Try to structure your thoughts more clearly'
-            ]
+            ],
+            'pause_events': interim_pauses,
+            'answer_duration': answer_duration,
+            'repetition_count': interim_repetition,
+            'emptyAnswer': empty_answer
         }
         emit('interview-feedback', feedback)
+        
+        try:
+            wt = interview_data.get('warning_tracker') or {}
+            wt['filler_count_session'] = 0
+            wt['pause_events'] = 0
+            wt['consecutive_empty'] = 0
+            wt['repetition_count_session'] = 0
+            interview_data['warning_tracker'] = wt
+        except Exception:
+            pass
         logger.info(f"📊 Sent feedback with scores: overall={confidence_score}, filler={filler_words_count}")
         
-       
+        
+        time.sleep(0.3)
+
+        
         if current_q < max_questions:
            
             next_question = None
             next_q_number = current_q + 1
             
-            if AI_AVAILABLE and interview_ai:
+            if interview_data.get('prefetch') and interview_data['prefetch'].get(next_q_number):
+                next_question = interview_data['prefetch'][next_q_number]
+                logger.info(f"⚡ Using prefetched question {next_q_number}")
+            elif AI_AVAILABLE and interview_ai:
                 try:
                     subject_name = map_subject_id_to_name(interview_data['module_name'])
                    
@@ -814,7 +1441,7 @@ def handle_answer_complete(data):
                     logger.info(f"🤖 AI Generation - Subject: {subject_name}, Difficulty: {interview_data['difficulty']}, Question: {next_q_number}")
                     logger.info(f"📝 Previous transcripts: {len(previous_transcripts)} available")
                     
-                    question_result = interview_ai.generate_question(
+                    question_result = interview_ai.generate_question(  # pyright: ignore[reportOptionalMemberAccess]
                         difficulty=interview_data['difficulty'],
                         subject=subject_name,
                         persona='professional_man',
@@ -855,16 +1482,91 @@ def handle_answer_complete(data):
             
             
             interview_data['current_question'] = next_q_number
+
             
-          
+            try:
+                qid = str(uuid.uuid4())
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                   
+                    cursor.execute("PRAGMA table_info('interview_questions')")
+                    cols = {row[1] for row in cursor.fetchall()}
+                    base_values = [
+                        ('id', qid),
+                        ('session_id', interview_data['session_id']),
+                        ('question_number', next_q_number),
+                        ('question_text', next_question)
+                    ]
+                    if 'question_category' in cols:
+                        base_values.append(('question_category', interview_data.get('module_name') or interview_data.get('config', {}).get('subject', 'general')))
+                    if 'difficulty_level' in cols:
+                        base_values.append(('difficulty_level', interview_data.get('difficulty', 'Medium')))
+                    if 'expected_duration' in cols:
+                       
+                        diff = (interview_data.get('difficulty') or '').lower()
+                        exp = 90 if diff == 'easy' else 120 if diff == 'medium' else 150
+                        base_values.append(('expected_duration', exp))
+                    col_names = ", ".join(name for name, _ in base_values)
+                    placeholders = ", ".join(['?'] * len(base_values))
+                    values = [val for _, val in base_values]
+                    cursor.execute(f"INSERT INTO interview_questions ({col_names}) VALUES ({placeholders})", values)
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as dbq_err:
+                logger.error(f"❌ Failed to persist question {next_q_number}: {dbq_err}")
+
+            try:
+                if 'questions' not in interview_data or not isinstance(interview_data['questions'], dict):
+                    interview_data['questions'] = {}
+                interview_data['questions'][next_q_number] = next_question
+            except Exception:
+                pass
+
             emit('interview-question', {
-                'questionText': next_question,  
+                'questionText': next_question,
                 'questionNumber': next_q_number,
                 'totalQuestions': max_questions,
                 'category': interview_data['module_name'],
                 'questionId': f"{interview_data['session_id']}_q{next_q_number}"
             })
             logger.info(f"➡️ Sent question {next_q_number}: {next_question[:50]}...")
+
+           
+            try:
+                following_q = next_q_number + 1
+                if following_q <= max_questions and AI_AVAILABLE and interview_ai:
+                    subject_name = map_subject_id_to_name(interview_data['module_name'])
+                    def _prefetch_following(sess_id: str, subject: str, diff: str, qn: int, prev_answers: list):
+                        try:
+                            prefetch = interview_ai.generate_question(  # pyright: ignore[reportOptionalMemberAccess]
+                                difficulty=diff,
+                                subject=subject,
+                                persona='professional_man',
+                                question_number=qn,
+                                previous_answers=prev_answers
+                            )
+                            if prefetch and (prefetch.get('question') or prefetch.get('question_text')):
+                                sess = sessions_by_id.get(sess_id)
+                                if sess:
+                                    sess.setdefault('prefetch', {})[qn] = prefetch.get('question') or prefetch.get('question_text')
+                                    logger.info(f"⚡ Prefetched question {qn}")
+                        except Exception as e:
+                            logger.warning(f"Prefetch failed: {e}")
+                    threading.Thread(
+                        target=_prefetch_following,
+                        args=(
+                            interview_data['session_id'],
+                            subject_name,
+                            interview_data['difficulty'],
+                            following_q,
+                            interview_data.get('transcripts', [])
+                        ),
+                        daemon=True
+                    ).start()
+            except Exception as pre_err:
+                logger.warning(f"Prefetch setup failed: {pre_err}")
         else:
            
             completion_data = {
@@ -877,8 +1579,13 @@ def handle_answer_complete(data):
             }
             emit('interview-complete', completion_data)
             logger.info(f"🎉 Interview completed for session {interview_data['session_id']} - {max_questions} questions asked")
-            logger.info(f"📤 Sent completion data: {completion_data}")
-            
+        
+        try:
+            if 'completion_data' in locals():
+                logger.info(f"📤 Sent completion data: {completion_data}")
+        except Exception:
+            pass
+
     except Exception as e:
         logger.error(f"Error completing answer: {str(e)}")
         emit('error', {'message': f'Failed to process answer completion: {str(e)}'})
@@ -898,20 +1605,24 @@ def handle_end_interview(data):
             session_id = provided_session_id
 
         if session_id:
-            # Update database
-            conn = sqlite3.connect('interview_iq.db')
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE interview_sessions 
-                SET end_time = CURRENT_TIMESTAMP, status = 'completed'
-                WHERE id = ?
-            ''', (session_id,))
-            conn.commit()
-            conn.close()
+            
+            try:
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE interview_sessions 
+                        SET end_time = CURRENT_TIMESTAMP, status = 'completed'
+                        WHERE id = ?
+                    ''', (session_id,))
+                    conn.commit()
+                    logger.info(f"✅ Interview {session_id} ended by user")
+                finally:
+                    conn.close()
+            except Exception as db_err:
+                logger.error(f"❌ Failed to update DB on end interview: {db_err}")
 
-            logger.info(f"✅ Interview {session_id} ended by user")
-
-            # Clean sid mapping but keep sessions_by_id
+            
             if client_id in active_interviews:
                 del active_interviews[client_id]
 
@@ -990,32 +1701,33 @@ def test_question():
 def get_analytics(session_id):
    
     try:
-        conn = sqlite3.connect('interview_iq.db')
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM interview_sessions WHERE id = ?
-        ''', (session_id,))
-        session_data = cursor.fetchone()
-        
-        if not session_data:
-            logger.warning(f"Session {session_id} not found in database")
-            return jsonify({'error': 'Session not found'}), 404
-        
-   
-        cursor.execute('''
-            SELECT * FROM interview_questions WHERE session_id = ? ORDER BY question_number
-        ''', (session_id,))
-        questions_data = cursor.fetchall()
-        
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT * FROM interview_sessions WHERE id = ?
+            ''', (session_id,))
+            session_data = cursor.fetchone()
+            
+            if not session_data:
+                logger.warning(f"Session {session_id} not found in database")
+                return jsonify({'error': 'Session not found'}), 404
+            
+       
+            cursor.execute('''
+                SELECT * FROM interview_questions WHERE session_id = ? ORDER BY question_number
+            ''', (session_id,))
+            questions_data = cursor.fetchall()
+            
 
-        cursor.execute('''
-            SELECT audio_transcript, confidence_score, clarity_score, technical_accuracy
-            FROM interview_answers WHERE session_id = ? ORDER BY id
-        ''', (session_id,))
-        answers_data = cursor.fetchall()
-        
-        conn.close()
+            cursor.execute('''
+                SELECT audio_transcript, confidence_score, clarity_score, technical_accuracy
+                FROM interview_answers WHERE session_id = ? ORDER BY id
+            ''', (session_id,))
+            answers_data = cursor.fetchall()
+        finally:
+            conn.close()
         
 
         answers = []
@@ -1075,7 +1787,6 @@ def get_analytics(session_id):
                 'strengths': generate_strengths(answers),
                 'improvements': generate_improvements(answers),
                 'overall': generate_overall_feedback(answers),
-                # Add recommendations list for client UI; derive from improvements/strengths
                 'recommendations': build_recommendations(answers)
             },
             
@@ -1098,7 +1809,7 @@ def get_analytics(session_id):
         return jsonify({'error': str(e)}), 500
 
 def analyze_filler_words(answers, realtime_issues=None):
-    filler_words = ['um', 'uh', 'like', 'you know', 'so', 'well', 'actually','yeah','ehh','aah']
+    filler_words = ['um', 'uh', 'like', 'you know', 'so', 'well', 'actually','yeah','ehh','aah','oh','Oh','ohh','uhm','And And','Om','on on','On on','on On',]
     filler_count = {}
     total_fillers = 0
     

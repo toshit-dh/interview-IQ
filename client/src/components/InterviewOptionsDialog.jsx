@@ -72,40 +72,37 @@ export default function InterviewOptionsDialog({ module, path, onClose }) {
     },
   ];
 
-  const handleStartInterview = async () => {
-    if (difficulty && llm && interviewType && persona) {
-      // Enter fullscreen mode before starting the interview
-      const elem = document.documentElement;
-      
-      try {
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if (elem.webkitRequestFullscreen) {
-          await elem.webkitRequestFullscreen();
-        } else {
-          alert(
-            "Fullscreen mode is not supported in your browser. You cannot proceed."
-          );
-          return;
-        }
+  const handlePdfUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === "application/pdf") {
+      setUploadedPdf(file);
+    } else {
+      alert("Please upload a valid PDF file");
+    }
+  };
 
-        // Navigate directly to AudioInterview page with configuration data
-        navigate(`/audio/interview/${module.path_id}/${module._id}`, {
-          state: { 
-            difficulty, 
-            llm, 
-            interviewType, 
-            persona,
-            moduleId: module._id,
-            pathId: module.path_id,
-            moduleName: module.name,  // Add module name for subject-specific questions
-            moduleDescription: module.description
-          },
-        });
-      } catch (err) {
-        console.error("Fullscreen request failed:", err);
-        alert("Failed to enter fullscreen. You cannot proceed.");
-      }
+  const handleStartInterview = async () => {
+    const isValid =
+      difficulty &&
+      interviewType &&
+      persona &&
+      (!pdfModeEnabled || uploadedPdf) &&
+      (pdfModeEnabled && pdfContainsAnswers ? true : llm);
+
+    if (isValid) {
+      navigate(`/interview-setup`, {
+        state: {
+          difficulty,
+          llm: pdfModeEnabled && pdfContainsAnswers ? "PDF" : llm,
+          interviewType,
+          persona,
+          module,
+          path,
+          pdfMode: pdfModeEnabled,
+          pdfFile: uploadedPdf,
+          pdfContainsAnswers,
+        },
+      });
     }
   };
 

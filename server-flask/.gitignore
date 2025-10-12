@@ -5,3 +5,4 @@
 *.sqlite3
 __pycache__/
 *.pyc
+fix_db_and_quality.patch

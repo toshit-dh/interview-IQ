@@ -1,8 +1,5 @@
-import React, { useState, useEffect,useRef} from "react";
-import {
-  User,
-  Bot,
-} from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { User, Bot } from "lucide-react";
 import { socket } from "../services/socket";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import TopBar from "../components/AudioInterview/TopBar";
@@ -18,17 +15,11 @@ export function AudioInterview() {
   const location = useLocation();
   const { pathId, moduleId } = useParams();
   
-  // Get interview configuration from navigation state
   const interviewConfig = location.state || {};
-  const { difficulty, llm, interviewType, persona, moduleName, moduleDescription } = interviewConfig;
+  const moduleNameFromState = interviewConfig.moduleName || interviewConfig.module || interviewConfig.moduleId;
+  const { difficulty, llm, interviewType, persona } = interviewConfig;
   
-  // Log received configuration for debugging
-  useEffect(() => {
-    console.log("AudioInterview received config:", interviewConfig);
-    if (!difficulty || !llm || !interviewType || !persona) {
-      console.warn("Missing interview configuration data!");
-    }
-  }, [interviewConfig, difficulty, llm, interviewType, persona]);
+  const [duration, setDuration] = useState("00:00");
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -36,8 +27,9 @@ export function AudioInterview() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStartTime, setRecordingStartTime] = useState(null);
   const [canAnswer, setCanAnswer] = useState(false);
-  const [answerQuality, setAnswerQuality] = useState(Array(10).fill('grey')); // grey, green, red
+  const [answerQuality, setAnswerQuality] = useState(Array(10).fill('grey'));
   const [currentAnswerIndex, setCurrentAnswerIndex] = useState(0);
+  const currentAnswerIndexRef = useRef(0);
   const [liveWarnings, setLiveWarnings] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState({
     questionNumber: 1,
@@ -47,24 +39,29 @@ export function AudioInterview() {
   });
   const [insights, setInsights] = useState([
     { insightType: "clarity", text: "Speak clearly and at a moderate pace" },
-    {
-      insightType: "fillerWords",
-      text: "Avoid filler words like 'um' and 'uh'",
-    },
+    { insightType: "fillerWords", text: "Avoid filler words like 'um' and 'uh'" },
     { insightType: "pause", text: "Take a brief pause before answering" },
-    {
-      insightType: "examples",
-      text: "Use specific examples in your responses",
-    },
-    { insightType: "confidence", text: "Maintain a confident tone throughout" },
+    { insightType: "examples", text: "Use specific examples in your responses" },
+    { insightType: "confidence", text: "Maintain a confident tone throughout" }
   ]);
 
   const mediaRecorderRef = useRef(null);
+  const mainStreamRef = useRef(null);
   const sessionIdRef = useRef(null);
+  const questionRetryRef = useRef(null); 
   const waitingForTranscriptionRef = useRef(false);
   const pendingAnswerDataRef = useRef(null);
+  const startTimeRef = useRef(null);
+  const timerRef = useRef(null);
+  const hasStartedSessionRef = useRef(false);  
+  const listenersRegisteredRef = useRef(false); 
 
-  // --- Handle exiting fullscreen ---
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const secs = (seconds % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
+
   useEffect(() => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
@@ -73,14 +70,9 @@ export function AudioInterview() {
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    };
-    // We intentionally don't include 'navigate' to avoid reruns on navigation object identity changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [navigate]);
 
-  // --- Demo: toggle AI speaking animation ---
   useEffect(() => {
     const interval = setInterval(() => {
       setIsInterviewerSpeaking((prev) => !prev);
@@ -88,196 +80,155 @@ export function AudioInterview() {
     return () => clearInterval(interval);
   }, []);
 
-  // Start interview session when component mounts and config is available
+
   useEffect(() => {
-    if (difficulty && llm && interviewType && persona) {
-      // Delay starting the session to ensure socket connection is established
-      const timer = setTimeout(() => {
-        startInterviewSession();
-      }, 2000);
-      
-      return () => clearTimeout(timer);
+    startTimeRef.current = Date.now();
+    let lastSeconds = 0;
+
+    timerRef.current = setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      if (elapsedSeconds !== lastSeconds) {
+        setDuration(formatTime(elapsedSeconds));
+        lastSeconds = elapsedSeconds;
+      }
+    }, 500);
+
+    return () => clearInterval(timerRef.current);
+  }, []);
+
+
+  useEffect(() => {
+    currentAnswerIndexRef.current = currentAnswerIndex;
+  }, [currentAnswerIndex]);
+
+  
+  useEffect(() => {
+    if (listenersRegisteredRef.current) {
+     
+      return;
     }
-    // startInterviewSession is defined in-scope and stable for our usage; suppress exhaustive-deps to avoid double-start
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [difficulty, llm, interviewType, persona, moduleId, pathId]);
+    listenersRegisteredRef.current = true;
+    console.log("🔌 Setting up socket listeners");
 
-  useEffect(() => {
-    // Define all microphone functions inside useEffect to avoid dependency issues
-    const startRec = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorderRef.current = new MediaRecorder(stream, {
-          mimeType: "audio/webm",
-        });
-
-        // Event listener will be added in startRecording() to avoid duplicates
-
-        mediaRecorderRef.current.start(1000); // send chunk every 1s
-      } catch (err) {
-        console.error("Error starting recording:", err);
-      }
-    };
-
-    const requestMicAccess = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("Microphone access granted", stream);
-        startRec();
-      } catch (err) {
-        console.error("Microphone access denied", err);
-        setShowCancelledModal(true);
-      }
-    };
-    
-    const checkMicPermission = async () => {
-      try {
-        const result = await navigator.permissions.query({ name: "microphone" });
-        console.log("Microphone permission state:", result.state);
-
-        if (result.state === "granted") {
-          startRec();
-        } else if (result.state === "prompt") {
-          requestMicAccess();
-        } else {
-          alert("Microphone access denied. Please enable it in browser settings.");
-        }
-      } catch (err) {
-        console.error("Permission check error:", err);
-      }
-    };
-    
-    // Connect to socket and check microphone
-    checkMicPermission();
-    
     socket.on("connect", () => {
-      console.log("Connected to backend via WebSocket");
-      // If we already have a session, resume it on reconnect
+      console.log("✅ Connected to server, socket ID:", socket.id);
       if (sessionIdRef.current) {
         socket.emit("resume-interview-session", { sessionId: sessionIdRef.current });
       }
     });
 
-    // Backend confirmation of connection
     socket.on("connected", (data) => {
-      console.log("Server connection confirmed:", data);
+      console.log("✅ Server confirmed connection:", data);
     });
 
-    // Live insights during audio streaming
-    socket.on("insights", (data) => {
-      console.log("Live insights received:", data);
-      setInsights(prev => [...prev, ...data]);
-    });
-
-    // Live warnings for filler words and breaks
     socket.on("live-warning", (warningData) => {
-      console.log("Live warning received:", warningData);
-      setLiveWarnings(warningData.message);
-      
-      // Clear warning after 3 seconds
-      setTimeout(() => {
-        setLiveWarnings('');
-      }, 3000);
-    });
-
-    // Answer quality updates from real-time analysis
-    socket.on("answer-quality-update", (qualityData) => {
-      console.log("Answer quality update:", qualityData);
-      const { blockIndex, quality, reason } = qualityData;
-      
-      if (blockIndex >= 0 && blockIndex < 10) {
-        setAnswerQuality(prev => {
-          const updated = [...prev];
-          updated[blockIndex] = quality;
-          return updated;
-        });
-        
-        console.log(`Block ${blockIndex} marked as ${quality} due to ${reason}`);
+      console.log("⚠️ Live warning:", warningData);
+      const type = warningData?.type;
+      const message = warningData?.message || String(warningData || "");
+      if (message) {
+        setLiveWarnings(message);
+        const timeoutMs = type === 'no_answer' ? 5000 : 3000;
+        setTimeout(() => setLiveWarnings(''), timeoutMs);
       }
     });
 
-    // New questions from backend
     socket.on("interview-question", (questionData) => {
-      console.log("🎯 FRONTEND: New question received:", questionData);
-      console.log("🎯 FRONTEND: Current question state before update:", currentQuestion);
-      
-      // Update current question display - backend sends: questionNumber, totalQuestions, questionText, category
-      const newQuestion = {
+      console.log("🎯 New question:", questionData);
+      setCurrentQuestion({
         questionNumber: questionData.questionNumber,
         totalQuestions: questionData.totalQuestions,
         questionText: questionData.questionText,
         category: questionData.category,
         questionId: questionData.questionId
-      };
-      
-      console.log("🎯 FRONTEND: Setting new question:", newQuestion);
-      setCurrentQuestion(newQuestion);
-      
-      // Enable answering for this question
+      });
+
+      if (questionRetryRef.current) {
+        clearInterval(questionRetryRef.current);
+        questionRetryRef.current = null;
+      }
       setCanAnswer(true);
       setIsInterviewerSpeaking(true);
-      
-      // Stop interviewer speaking after a delay
-      setTimeout(() => {
-        setIsInterviewerSpeaking(false);
-      }, 3000);
-      
-      // Add system insight
-      setInsights(prev => [...prev, {
-        insightType: 'system',
-        text: `Question ${questionData.questionNumber} loaded. Click "Start Answer" when ready to respond.`
-      }]);
+      setTimeout(() => setIsInterviewerSpeaking(false), 3000);
     });
 
-    // Feedback after answer analysis
     socket.on("interview-feedback", (feedbackData) => {
-      console.log("Answer feedback received:", feedbackData);
-      
-      // Add feedback insights
+      console.log("📊 Feedback:", feedbackData);
       if (feedbackData.insights) {
         setInsights(prev => [...prev, ...feedbackData.insights]);
-      }
-      
-      // Display scores if available
-      if (feedbackData.scores) {
-        console.log("Speech analysis scores:", feedbackData.scores);
-        
-        // Determine answer quality based on scores
-        const overallScore = feedbackData.scores.overall_communication_score || 70;
-        const fillerWordsCount = feedbackData.scores.filler_words_count || 0;
-        
-        let quality = 'green'; // Default to good
-        
-        if (fillerWordsCount > 5 || overallScore < 60) {
-          quality = 'red'; // Poor quality
-        } else if (fillerWordsCount > 2 || overallScore < 75) {
-          quality = 'yellow'; // Average quality
+        const first = Array.isArray(feedbackData.insights) ? feedbackData.insights[0] : null;
+        const text = typeof first === 'string' ? first : first?.text;
+        if (feedbackData.isUpdate && text) {
+          setLiveWarnings(text);
+          setTimeout(() => setLiveWarnings(''), 3000);
         }
+      }
+      if (feedbackData.scores) {
         
-        // Update answer quality block
+        const s = feedbackData.scores || {};
+        const commScore = s.overall_communication_score ?? (
+          (typeof s.confidence_score === 'number' && typeof s.clarity_score === 'number')
+            ? (s.confidence_score + s.clarity_score) / 2
+            : undefined
+        );
+        const overallScore = commScore ?? s.overall ?? 70;
+        const fillerWordsCount = s.filler_words_count ?? s.fillerCount ?? 0;
+        const pauseEvents = (s.pause_events ?? s.pauseEvents ?? feedbackData.pause_events ?? 0);
+        const repetitionCount = s.repetition_count ?? s.repetitionCount ?? feedbackData.repetition_count ?? 0;
+        const emptyAnswer = (feedbackData.emptyAnswer ?? s.empty_answer ?? s.emptyAnswer ?? false) === true;
+
+        
+        let quality = 'green';
+        const isFillerHeavy = fillerWordsCount >= 5; 
+        const hasLongPauseRed = pauseEvents >= 2;
+        const hasLongPauseYellow = pauseEvents === 1;
+        const strongRepetition = repetitionCount >= 3;
+        const weakRepetition = repetitionCount === 1;
+        const lowScore = overallScore < 55;
+        const mediumScore = overallScore < 70;
+
+        if (emptyAnswer || isFillerHeavy || hasLongPauseRed || strongRepetition || lowScore) {
+          quality = 'red';
+        } else if (fillerWordsCount >= 2 || weakRepetition || mediumScore || hasLongPauseYellow) {
+          quality = 'yellow';
+        }
+
+        
+        if (emptyAnswer) {
+          setLiveWarnings('No answer detected. Try to speak at least a full sentence.');
+          setTimeout(() => setLiveWarnings(''), 5000);
+          setInsights(prev => [
+            ...prev,
+            { insightType: 'warning', text: 'No answer detected for the last question.' }
+          ]);
+        }
+
+        const isUpdate = feedbackData.isUpdate === true;
+        const qn = Number.isInteger(feedbackData.questionNumber) ? feedbackData.questionNumber : null;
+        const idxToUpdate = isUpdate && qn ? Math.max(0, Math.min(9, qn - 1)) : currentAnswerIndexRef.current;
+
         setAnswerQuality(prev => {
           const newQuality = [...prev];
-          newQuality[currentAnswerIndex] = quality;
+          newQuality[idxToUpdate] = quality;
           return newQuality;
         });
-        
-        // Move to next answer index
-        setCurrentAnswerIndex(prev => Math.min(prev + 1, 9));
+        if (!isUpdate) {
+          setCurrentAnswerIndex(prev => Math.min(prev + 1, 9));
+        }
       }
     });
 
-    // Session started confirmation
     socket.on("interview-session-started", (sessionData) => {
-      console.log("Interview session started:", sessionData);
-      if (sessionData?.sessionId) {
-        sessionIdRef.current = sessionData.sessionId;
+      console.log("🎬 Session started:", sessionData);
+      const incomingSessionId = sessionData?.sessionId || sessionData?.session_id;
+      if (incomingSessionId) {
+        sessionIdRef.current = incomingSessionId;
+
+        socket.emit("get-current-question", { sessionId: sessionIdRef.current });
       }
     });
 
-    // Interview completion
     socket.on("interview-complete", (completionData) => {
-      console.log("Interview completed:", completionData);
-      // Navigate directly to analytics when interview naturally completes
+      console.log("🎉 Interview complete:", completionData);
       setTimeout(() => {
         navigate("/analytics", { 
           state: { 
@@ -289,10 +240,8 @@ export function AudioInterview() {
       }, 1000);
     });
 
-    // Interview ended by user
     socket.on("interview-ended", (endData) => {
-      console.log("Interview ended:", endData);
-      // Navigate to analytics page
+      console.log("🛑 Interview ended:", endData);
       setTimeout(() => {
         navigate("/analytics", { 
           state: { 
@@ -304,213 +253,206 @@ export function AudioInterview() {
       }, 1000);
     });
 
-    // Audio transcription results
     socket.on("audio-transcription", (data) => {
-      console.log("🗣️ Received audio transcription:", data);
-      
-      if (data.success && data.transcript) {
-        // Update UI with transcription results
-        console.log(`📝 Transcript: "${data.transcript}"`);
-        console.log(`📊 Analysis:`, data.analysis);
-        
-        // Update answer quality based on analysis
-        if (data.analysis && data.analysis.quality) {
-          const currentQ = currentAnswerIndex;
-          setAnswerQuality(prev => {
-            const newQuality = [...prev];
-            newQuality[currentQ] = data.analysis.quality;
-            return newQuality;
-          });
-          
-          // Show warnings if any
-          if (data.analysis.warnings && data.analysis.warnings.length > 0) {
-            const warningText = data.analysis.warnings.join('. ');
-            setLiveWarnings(`Analysis: ${warningText}`);
-            
-            // Clear warning after 5 seconds
-            setTimeout(() => {
-              setLiveWarnings('');
-            }, 5000);
-          }
-        }
-
-        // If we were waiting to finalize the answer until transcription is ready, emit now
-        if (waitingForTranscriptionRef.current) {
-          const pending = pendingAnswerDataRef.current || {};
-          const duration = pending.duration || 30;
-          const questionId = pending.questionId || (currentQuestion.questionId || 'current-question');
-          const timestamp = pending.timestamp || new Date().toISOString();
-
-          const answerData = {
-            transcript: data.transcript,
-            duration,
-            timestamp,
-            questionId
-          };
-          console.log("📤 Finalizing answer after transcription:", answerData);
-          socket.emit("answer-complete", { ...answerData, sessionId: sessionIdRef.current });
-          waitingForTranscriptionRef.current = false;
-          pendingAnswerDataRef.current = null;
-
-          // Disable answer controls until next question
-          setCanAnswer(false);
-
-          // Show feedback that answer was submitted
-          setInsights(prev => [...prev, {
-            insightType: 'system',
-            text: `Answer submitted! Waiting for next question...`
-          }]);
-        }
+      console.log("🗣️ Transcription:", data);
+     
+      if (data && data.success && data.transcript) {
+        setInsights(prev => [
+          ...prev,
+          { insightType: 'transcript', text: `Received transcription (${data.transcript.length} chars)` }
+        ]);
       }
     });
 
-    socket.on("audio-error", (errorData) => {
-      console.error("Audio processing error:", errorData);
-      setLiveWarnings(`Audio processing failed: ${errorData.message}`);
-      
-      // Clear error after 5 seconds
-      setTimeout(() => {
-        setLiveWarnings('');
-      }, 5000);
-    });
-
-    // Error handling
     socket.on("error", (errorData) => {
-      console.error("Server error:", errorData);
-      alert(`Interview Error: ${errorData.message}`);
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Disconnected from backend");
+      console.error("❌ Server error:", errorData);
+      alert(`Error: ${errorData.message}`);
     });
 
     return () => {
       socket.off("connect");
       socket.off("connected");
-      socket.off("insights");
       socket.off("live-warning");
-      socket.off("answer-quality-update");
       socket.off("interview-question");
       socket.off("interview-feedback");
       socket.off("interview-session-started");
       socket.off("interview-complete");
       socket.off("interview-ended");
       socket.off("audio-transcription");
-      socket.off("audio-error");
       socket.off("error");
-      socket.off("disconnect");
+      listenersRegisteredRef.current = false;
     };
-  }, [navigate, currentAnswerIndex, currentQuestion]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- Audio recording ---
+ 
+  useEffect(() => {
+    const isWaiting = !currentQuestion?.questionText || /waiting for/i.test(currentQuestion.questionText);
+    if (!sessionIdRef.current) return; 
+    if (!isWaiting) {
+     
+      if (questionRetryRef.current) {
+        clearInterval(questionRetryRef.current);
+        questionRetryRef.current = null;
+      }
+      return;
+    }
+    if (!questionRetryRef.current) {
+      questionRetryRef.current = setInterval(() => {
+        console.log("⏳ Still waiting for question – requesting again...");
+        socket.emit("get-current-question", { sessionId: sessionIdRef.current });
+      }, 2000);
+    }
+    return () => {
+      if (questionRetryRef.current) {
+        clearInterval(questionRetryRef.current);
+        questionRetryRef.current = null;
+      }
+    };
+  }, [currentQuestion?.questionText]);
+
+  useEffect(() => {
+    if (!difficulty || !llm || !interviewType || !persona || hasStartedSessionRef.current) return;
+
+    const incomingSessionId = interviewConfig.sessionId || sessionIdRef.current;
+    if (incomingSessionId) {
+      sessionIdRef.current = incomingSessionId;
+      if (socket.connected) {
+        console.log("🔁 Resuming existing session", incomingSessionId);
+        socket.emit("resume-interview-session", { sessionId: incomingSessionId });
+        socket.emit("get-current-question", { sessionId: incomingSessionId });
+      } else {
+        socket.once("connect", () => {
+          console.log("🔁 Resuming existing session after connect", incomingSessionId);
+          socket.emit("resume-interview-session", { sessionId: incomingSessionId });
+          socket.emit("get-current-question", { sessionId: incomingSessionId });
+        });
+      }
+      hasStartedSessionRef.current = true; 
+      return;
+    }
+
+    const startSession = () => {
+      if (socket.connected) {
+        console.log("✅ Socket is connected, starting new session now");
+        hasStartedSessionRef.current = true;
+        startInterviewSession();
+      } else {
+        console.log("⏳ Socket not connected yet, waiting to start session...");
+        socket.once("connect", () => {
+          console.log("✅ Socket connected, starting new session now");
+          hasStartedSessionRef.current = true;
+          startInterviewSession();
+        });
+      }
+    };
+    const timer = setTimeout(startSession, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [difficulty, llm, interviewType, persona, navigate]);
+
+
   const startRecording = async () => {
     try {
+      const preferredType = window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm'
+        : 'audio/webm;codecs=opus';
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream, {
-        mimeType: "audio/webm",
-      });
+      mainStreamRef.current = stream;
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: preferredType });
 
-      // Store complete audio data instead of sending chunks
       const audioChunks = [];
       
       mediaRecorderRef.current.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) {
-          // Collect audio chunks instead of sending immediately
           audioChunks.push(event.data);
-          console.log(`🎤 Collected audio chunk: ${event.data.size} bytes`);
+          console.log(`🎤 Chunk: ${event.data.size} bytes`);
         }
       });
 
-      // Process complete audio when recording stops
+    
       mediaRecorderRef.current.addEventListener("stop", () => {
         if (audioChunks.length > 0) {
-          // Combine all chunks into one blob
-          const completeAudioBlob = new Blob(audioChunks, { type: "audio/webm" });
-          console.log(`🎤 Complete audio size: ${completeAudioBlob.size} bytes`);
+          const completeBlob = new Blob(audioChunks, { type: preferredType });
+          console.log(`🎤 Complete audio: ${completeBlob.size} bytes`);
           
-          // Convert complete audio to base64 and send to server
           const reader = new FileReader();
           reader.onloadend = () => {
-            const base64Data = reader.result.split(',')[1]; // Remove data:audio/webm;base64, prefix
-            console.log(`🎤 Sending complete audio: ${base64Data.length} base64 chars`);
-            
-            // Send complete audio for processing
+            const base64Data = reader.result.split(',')[1];
             socket.emit("process-complete-audio", { 
               audioData: base64Data,
               timestamp: Date.now(),
               sessionId: sessionIdRef.current
             });
           };
-          reader.readAsDataURL(completeAudioBlob);
+          reader.readAsDataURL(completeBlob);
         }
+        
+        
+        stream.getTracks().forEach(track => track.stop());
       });
 
-      // Notify server that recording started
-  socket.emit("recording-start", { timestamp: Date.now(), sessionId: sessionIdRef.current });
+      socket.emit("recording-start", { timestamp: Date.now(), sessionId: sessionIdRef.current });
       
-      // Start recording - collect all data until stop
-      mediaRecorderRef.current.start(); // No chunking - record continuously
+      mediaRecorderRef.current.start(1000);
+
+
       setIsRecording(true);
       setIsUserSpeaking(true);
       setRecordingStartTime(Date.now());
-      console.log("🎤 Started recording answer (complete audio mode)");
+      console.log("🎤 Recording started with codecs opus if supported");
     } catch (err) {
-      console.error("🎙️ Error starting recording:", err);
+      console.error("❌ Recording error:", err);
+      alert("Microphone access failed. Please allow permissions.");
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+      try { mediaRecorderRef.current.stop(); } catch { /* no-op */ }
       setIsRecording(false);
       setIsUserSpeaking(false);
-      console.log("⏹️ Stopped recording");
-      
-      // Notify server that recording stopped
-  socket.emit("recording-stop", { timestamp: Date.now(), sessionId: sessionIdRef.current });
+      socket.emit("recording-stop", { timestamp: Date.now(), sessionId: sessionIdRef.current });
+      console.log("⏹️ Recording stopped");
     }
   };
 
-  // Handle answer completion
   const handleAnswerComplete = () => {
     if (!isRecording) {
-      console.log("❌ Not currently recording");
+      console.log("❌ Not recording");
       return;
     }
 
-    // Stop current recording; transcription will arrive via socket event
     stopRecording();
-
-    // Calculate recording duration
     const duration = recordingStartTime ? (Date.now() - recordingStartTime) / 1000 : 30;
 
-    // Prepare to emit answer-complete when transcription is ready
-    waitingForTranscriptionRef.current = true;
-    pendingAnswerDataRef.current = {
+
+    const answerPayload = {
+      transcript: "",
       duration,
       timestamp: new Date().toISOString(),
-      questionId: currentQuestion.questionId || 'current-question'
+      questionId: currentQuestion.questionId || 'current-question',
+      sessionId: sessionIdRef.current
     };
-
-    // Inform user we're processing their answer
+    console.log("📤 Submitting answer immediately:", answerPayload);
+    socket.emit("answer-complete", answerPayload);
+    setCanAnswer(false);
+    waitingForTranscriptionRef.current = false;
+    pendingAnswerDataRef.current = null;
     setInsights(prev => [...prev, {
       insightType: 'system',
-      text: `Processing your answer... (${duration.toFixed(1)}s)`
+      text: `Answer submitted (${duration.toFixed(1)}s). Generating next question...`
     }]);
   };
 
-  // Handle starting to record answer
   const handleStartAnswer = () => {
     if (!canAnswer) {
-      console.log("❌ Cannot answer right now");
+      console.log("❌ Cannot answer yet");
       return;
     }
-    
-    console.log("🎤 Starting to record answer");
+    console.log("🎤 Starting answer");
     startRecording();
   };
 
-  // Function to start interview session with configuration
   const startInterviewSession = () => {
     const sessionData = {
       action: "start-interview",
@@ -521,8 +463,7 @@ export function AudioInterview() {
         persona,
         moduleId,
         pathId,
-        // Add interview subject/domain information
-        subject: moduleName || pathId || "general", // Use actual module name for subject-specific questions
+        subject: (moduleNameFromState || moduleId || pathId || "general"),
         interviewMode: "ai-powered",
         maxQuestions: 10,
         expectedDuration: difficulty === "Easy" ? 15 : difficulty === "Medium" ? 25 : 35
@@ -550,35 +491,30 @@ export function AudioInterview() {
       }
     };
     
-    console.log("Starting comprehensive interview session:", sessionData);
-  socket.emit("start-interview-session", sessionData);
-    
-    // The server will handle initialization and send the first question automatically
+    console.log("🚀 Starting session:", sessionData);
+    socket.emit("start-interview-session", sessionData);
+   
+    setTimeout(() => {
+      try { socket.emit("get-current-question", {}); } catch { /* no-op */ }
+    }, 200);
   };
 
-  // Handle ending the interview
   const handleEndInterview = () => {
-    console.log("Ending interview...");
-    
-    // Stop recording
-    stopRecording();
-    
-    // Emit end interview event to server
+    console.log("🛑 Ending interview");
+    if (isRecording) {
+      stopRecording();
+    }
     socket.emit("end-interview", {
       reason: "user_ended",
       timestamp: new Date().toISOString(),
       sessionId: sessionIdRef.current
     });
-
-    // Do not navigate immediately; wait for server to emit 'interview-ended'
   };
 
-  // --- Render ---
   return (
     <div className="fixed inset-0 bg-slate-900 overflow-hidden">
       <TopBar onEndClick={() => setShowEndConfirm(true)} />
       <div className="h-full pt-16 pb-32 flex flex-col items-center justify-center">
-        {/* Live Warning Display */}
         {liveWarnings && (
           <div className="fixed top-32 left-1/2 transform -translate-x-1/2 z-50">
             <div className="bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg animate-pulse">
@@ -587,7 +523,6 @@ export function AudioInterview() {
           </div>
         )}
         
-        {/* Answer Quality Blocks */}
         <div className="mb-8">
           <h3 className="text-white text-center mb-4 text-lg font-semibold">Answer Quality Progress</h3>
           <div className="flex space-x-2">
@@ -600,12 +535,6 @@ export function AudioInterview() {
                   quality === 'red' ? 'bg-red-500 text-white' :
                   'bg-gray-600 text-gray-300'
                 }`}
-                title={
-                  quality === 'green' ? 'Excellent Answer' :
-                  quality === 'yellow' ? 'Good Answer' :
-                  quality === 'red' ? 'Needs Improvement' :
-                  'Not Answered'
-                }
               >
                 {index + 1}
               </div>
@@ -619,7 +548,6 @@ export function AudioInterview() {
           </div>
         </div>
 
-        {/* Wave Circles */}
         <div className="flex items-center justify-center space-x-32">
           <WaveCircle
             isSpeaking={isInterviewerSpeaking}
@@ -636,16 +564,7 @@ export function AudioInterview() {
         </div>
       </div>
       
-      {/* Answer Controls */}
       <div className="absolute top-20 right-4 z-50 space-y-2">
-        {/* Test Analytics Button */}
-        <button
-          onClick={() => navigate("/analytics")}
-          className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold w-full shadow-lg"
-        >
-          📊 View Analytics
-        </button>
-        
         {!isRecording && canAnswer && (
           <button
             onClick={handleStartAnswer}
@@ -675,26 +594,20 @@ export function AudioInterview() {
           </div>
         )}
       </div>
+      
       <AIInsightsPanel insights={insights} />
-
       <CurrentQuestionDisplay
         questionNumber={currentQuestion.questionNumber}
         totalQuestions={currentQuestion.totalQuestions}
         questionText={currentQuestion.questionText}
         category={currentQuestion.category}
       />
-
-      {/* ⏱ Duration auto-updating every second */}
       <InterviewInfoPanel
         duration={duration}
-        questionCount="3/10"
-        path="Frontend"
-        interviewConfig={{
-          difficulty,
-          llm,
-          interviewType,
-          persona
-        }}
+        questionCount={`${currentQuestion.questionNumber}/${currentQuestion.totalQuestions}`}
+        path={pathId || "General"}
+        module={moduleNameFromState || moduleId}
+        interviewConfig={{ difficulty, llm, interviewType, persona }}
       />
 
       {showEndConfirm && (
