@@ -415,7 +415,7 @@ def handle_audio_chunk(data):
             if buffer_duration >= 3.0:  
                
                 combined_audio = b''.join(active_interviews[client_id]['chunk_buffer'])
-                logger.info(f"🎤 Processed 3s buffer: {len(combined_audio)} bytes (no heuristic warnings)"
+                logger.info(f"🎤 Processed 3s buffer: {len(combined_audio)} bytes (no heuristic warnings)")
                 active_interviews[client_id]['chunk_buffer'] = []
                 active_interviews[client_id]['buffer_start_time'] = current_time
                 
