@@ -408,7 +408,6 @@ def handle_audio_chunk(data):
             audio_bytes = base64.b64decode(clean_audio_data)
             active_interviews[client_id]['chunk_buffer'].append(audio_bytes)
             
-           
             current_time = time.time()
             buffer_duration = current_time - active_interviews[client_id]['buffer_start_time']
             
