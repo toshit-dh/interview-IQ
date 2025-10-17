@@ -32,6 +32,12 @@ export default function Navbar() {
 
             {/* Desktop Menu */}
             <div className="hidden md:flex items-center space-x-8">
+              <Link
+                to="/"
+                className="text-gray-300 hover:text-white transition-colors"
+              >
+                Home
+              </Link>
               {user && (
                 <Link
                   to={`/profile/${user.id}`}

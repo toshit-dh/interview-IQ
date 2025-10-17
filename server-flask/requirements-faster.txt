@@ -1,0 +1,17 @@
+
+flask>=2.3.0
+flask-socketio>=5.3.0
+flask-cors>=4.0.0
+python-dotenv>=1.0.0
+
+faster-whisper>=1.0.0
+ctranslate2>=4.3.0
+numpy>=1.24.0
+soundfile>=0.12.1
+
+
+webrtcvad>=2.0.10
+
+# Optional decoding path (webm/opus) - choose one:
+PyAV>=12.0.0  # preferred
+

@@ -941,6 +941,14 @@ def handle_resume_interview_session(data):
         if session_id not in sessions_by_id:
             emit('error', {'message': 'Session not found for resume'})
             return
+        # Block resuming completed sessions
+        try:
+            meta = sessions_by_id.get(session_id) or {}
+            if (meta.get('status') or '').lower() == 'completed':
+                emit('error', {'message': 'Cannot resume a completed session'})
+                return
+        except Exception:
+            pass
         active_interviews[client_id] = sessions_by_id[session_id]
         active_interviews[client_id]['client_id'] = client_id
         logger.info(f"🔗 Session {session_id} resumed for client {client_id}")
@@ -965,18 +973,24 @@ def handle_start_interview_session(data):
         metadata = data.get('metadata', {})
 
         
+        # If there's an existing active session, mark it complete & detach so new session starts clean
         if client_id in active_interviews and active_interviews[client_id].get('session_id'):
-            existing = active_interviews[client_id]
-            logger.info(f"♻️ Reusing existing session {existing.get('session_id')} for client {client_id}")
-            emit('interview-session-started', {
-                'sessionId': existing.get('session_id'),
-                'status': 'Session already active'
-            })
+            prev_sid = active_interviews[client_id].get('session_id')
+            logger.info(f"♻️ Completing previous session {prev_sid} for client {client_id} before new start")
             try:
-                _send_current_question(client_id, existing.get('session_id'))
-            except Exception as qerr:
-                logger.error(f"❌ Failed to resend current question on reuse: {qerr}")
-            return
+                conn_prev = get_db_connection()
+                try:
+                    cur_prev = conn_prev.cursor()
+                    cur_prev.execute('''UPDATE interview_sessions SET end_time = CURRENT_TIMESTAMP, status = 'completed' WHERE id = ?''', (prev_sid,))
+                    conn_prev.commit()
+                finally:
+                    conn_prev.close()
+            except Exception as end_prev_err:
+                logger.warning(f"Could not finalize previous session {prev_sid}: {end_prev_err}")
+            try:
+                del active_interviews[client_id]
+            except Exception:
+                pass
         
         
         session_id = str(uuid.uuid4())
@@ -1433,31 +1447,22 @@ def handle_answer_complete(data):
                 logger.info(f"⚡ Using prefetched question {next_q_number}")
             elif AI_AVAILABLE and interview_ai:
                 try:
-                    subject_name = map_subject_id_to_name(interview_data['module_name'])
-                   
+                    subject_name = map_subject_id_to_name(interview_data.get('module_name') or interview_data.get('config', {}).get('subject', 'general'))
                     previous_transcripts = interview_data.get('transcripts', [])
-                    
-                    logger.info(f"🤖 AI Generation - Subject: {subject_name}, Difficulty: {interview_data['difficulty']}, Question: {next_q_number}")
-                    logger.info(f"📝 Previous transcripts: {len(previous_transcripts)} available")
-                    
-                    question_result = interview_ai.generate_question(  # pyright: ignore[reportOptionalMemberAccess]
-                        difficulty=interview_data['difficulty'],
+                    question_result = interview_ai.generate_question(
+                        difficulty=interview_data.get('difficulty', 'Medium'),
                         subject=subject_name,
                         persona='professional_man',
                         question_number=next_q_number,
                         previous_answers=previous_transcripts
                     )
-                    
                     logger.info(f"🎯 AI Result: {question_result}")
-                    
                     if question_result and (question_result.get('question') or question_result.get('question_text')):
-                      
                         next_question = question_result.get('question') or question_result.get('question_text')
                         logger.info(f"✅ Generated AI question {next_q_number}: {(next_question or '')[:100]}...")
                     else:
                         logger.warning(f"⚠️ AI returned invalid result: {question_result}")
                         next_question = None
-                    
                 except Exception as ai_error:
                     logger.error(f"❌ AI question generation failed: {ai_error}")
                     import traceback
@@ -1625,10 +1630,23 @@ def handle_end_interview(data):
             if client_id in active_interviews:
                 del active_interviews[client_id]
 
-            emit('interview-ended', {
-                'sessionId': session_id,
-                'message': 'Interview ended successfully'
-            })
+            try:
+                completion_data = build_completion_payload(session_id)
+                # Adjust message to reflect manual termination (may be mid-interview)
+                if completion_data.get('answeredQuestions', 0) < completion_data.get('totalQuestions', 0):
+                    completion_data['message'] = 'Interview ended by user before all questions'
+                else:
+                    completion_data['message'] = 'Interview ended by user'
+            except Exception as build_err:
+                logger.error(f"⚠️ Failed to build rich payload on manual end: {build_err}")
+                completion_data = {
+                    'sessionId': session_id,
+                    'message': 'Interview ended successfully',
+                    'questions': [],
+                    'answers': []
+                }
+
+            emit('interview-ended', completion_data)
         else:
             emit('error', {'message': 'No active interview to end'})
             
@@ -2002,6 +2020,101 @@ def build_recommendations(answers: List[dict]) -> List[str]:
         ]
 
     return recs[:4]
+
+def _fetch_session_detail(session_id: str):
+    try:
+        conn = get_db_connection()
+        try:
+            c = conn.cursor()
+            c.execute('SELECT * FROM interview_sessions WHERE id = ?', (session_id,))
+            session_row = c.fetchone()
+            if not session_row:
+                return None
+            c.execute('''SELECT question_number, question_text FROM interview_questions WHERE session_id = ? ORDER BY question_number''', (session_id,))
+            questions = c.fetchall()
+            c.execute('''SELECT question_id, audio_transcript, filler_words_count, confidence_score, clarity_score, technical_accuracy FROM interview_answers WHERE session_id = ? ORDER BY id''', (session_id,))
+            answers = c.fetchall()
+            return session_row, questions, answers
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"❌ Failed fetching session detail {session_id}: {e}")
+        return None
+
+def build_completion_payload(session_id: str, interview_data: dict | None = None):
+    db_data = _fetch_session_detail(session_id)
+    if not db_data:
+        return {
+            'sessionId': session_id,
+            'message': 'Interview completed',
+            'questions': [],
+            'answers': []
+        }
+    session_row, questions_rows, answers_rows = db_data
+    difficulty = session_row[2]
+    llm = session_row[3]
+    interview_type = session_row[4]
+    persona = session_row[5]
+    subject = session_row[6]
+    module_id = session_row[7]
+    path_id = session_row[8]
+    start_time = session_row[9]
+    end_time = session_row[10]
+    total_questions = session_row[11] or len(questions_rows) or 10
+    status = session_row[14] or 'completed'
+
+
+    questions_list = []
+    for q in questions_rows:
+        questions_list.append({
+            'questionNumber': q[0],
+            'questionText': q[1]
+        })
+
+    answers_list = []
+    for a in answers_rows:
+        qid, transcript, fillers, conf, clar, tech = a
+        fillers = fillers or 0
+        answers_list.append({
+            'questionId': qid,
+            'transcript': transcript or '',
+            'fillerWordsCount': fillers,
+            'fillerFlag': 1 if fillers > 0 else 0,
+            'confidenceScore': conf or 0,
+            'clarityScore': clar or 0,
+            'technicalAccuracy': tech or 0
+        })
+
+    overall_conf = round(sum(a['confidenceScore'] for a in answers_list) / max(len(answers_list),1), 1) if answers_list else 0
+    overall_clarity = round(sum(a['clarityScore'] for a in answers_list) / max(len(answers_list),1), 1) if answers_list else 0
+    overall_tech = round(sum(a['technicalAccuracy'] for a in answers_list) / max(len(answers_list),1), 1) if answers_list else 0
+    overall_comm = round(((overall_conf + overall_clarity)/2),1) if answers_list else 0
+
+    return {
+        'sessionId': session_id,
+        'message': 'Interview completed successfully!',
+        'difficulty': difficulty,
+        'llm': llm,
+        'interviewType': interview_type,
+        'persona': persona,
+        'subject': subject,
+        'moduleId': module_id,
+        'pathId': path_id,
+        'startTime': start_time,
+        'endTime': end_time,
+        'status': status,
+        'totalQuestions': total_questions,
+        'answeredQuestions': len(answers_list),
+        'completedQuestions': len(answers_list),
+        'scores': {
+            'overallCommunication': overall_comm,
+            'confidence': overall_conf,
+            'clarity': overall_clarity,
+            'technical_accuracy': overall_tech
+        },
+        'questions': questions_list,
+        'answers': answers_list
+    }
 
 if __name__ == '__main__':
     logger.info("🚀 Starting Interview IQ Server v2.0 (Clean Audio Processing)")

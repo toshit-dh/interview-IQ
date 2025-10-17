@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { User, Bot } from "lucide-react";
 import { socket } from "../services/socket";
-import { useNavigate, useLocation, useParams } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import TopBar from "../components/AudioInterview/TopBar";
 import WaveCircle from "../components/AudioInterview/WaveCircle";
 import AIInsightsPanel from "../components/AudioInterview/AIInsightsPanel";
@@ -57,6 +57,8 @@ export function AudioInterview() {
   const timerRef = useRef(null);
   const hasStartedSessionRef = useRef(false);
   const listenersRegisteredRef = useRef(false);
+  const endedRef = useRef(false);
+  const suppressFullscreenExitNavRef = useRef(false);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
@@ -69,14 +71,43 @@ export function AudioInterview() {
   useEffect(() => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
+        if (suppressFullscreenExitNavRef.current) {
+          suppressFullscreenExitNavRef.current = false;
+          return;
+        }
+        if (!endedRef.current) {
+          endedRef.current = true;
+          try {
+            if (isRecording) {
+              try {
+                if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+              } catch {
+                // no-op
+              }
+              setIsRecording(false);
+              setIsUserSpeaking(false);
+              socket.emit("recording-stop", { timestamp: Date.now(), sessionId: sessionIdRef.current });
+            }
+            if (sessionIdRef.current) {
+              socket.emit("end-interview", {
+                reason: "fullscreen_exit",
+                timestamp: new Date().toISOString(),
+                sessionId: sessionIdRef.current,
+              });
+            }
+            sessionIdRef.current = null;
+          } catch {
+            // no-op
+          }
+        }
         setShowCancelledModal(true);
-        setTimeout(() => navigate("/"), 3000);
+        setTimeout(() => navigate("/"), 1500);
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, [navigate]);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecording]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -126,10 +157,12 @@ export function AudioInterview() {
       console.log("✅ Server confirmed connection:", data);
     });
 
+
     socket.on("live-warning", (warningData) => {
       console.log("⚠️ Live warning:", warningData);
       const type = warningData?.type;
       const message = warningData?.message || String(warningData || "");
+      if (type === "no_answer") return;
       if (message) {
         setLiveWarnings(message);
         const timeoutMs = type === "no_answer" ? 5000 : 3000;
@@ -218,19 +251,6 @@ export function AudioInterview() {
           quality = "yellow";
         }
 
-        if (emptyAnswer) {
-          setLiveWarnings(
-            "No answer detected. Try to speak at least a full sentence."
-          );
-          setTimeout(() => setLiveWarnings(""), 5000);
-          setInsights((prev) => [
-            ...prev,
-            {
-              insightType: "warning",
-              text: "No answer detected for the last question.",
-            },
-          ]);
-        }
 
         const isUpdate = feedbackData.isUpdate === true;
         const qn = Number.isInteger(feedbackData.questionNumber)
@@ -268,8 +288,8 @@ export function AudioInterview() {
     socket.on("interview-complete", (completionData) => {
       console.log("🎉 Interview complete:", completionData);
 
-      // Exit fullscreen if active
       if (document.fullscreenElement) {
+        suppressFullscreenExitNavRef.current = true;
         document.exitFullscreen().catch((err) => {
           console.warn("Failed to exit fullscreen:", err);
         });
@@ -289,6 +309,12 @@ export function AudioInterview() {
 
     socket.on("interview-ended", (endData) => {
       console.log("🛑 Interview ended:", endData);
+      if (document.fullscreenElement) {
+        suppressFullscreenExitNavRef.current = true;
+        document.exitFullscreen().catch((err) => {
+          console.warn("Failed to exit fullscreen:", err);
+        });
+      }
       setTimeout(() => {
         navigate("/analytics", {
           state: {
@@ -332,6 +358,7 @@ export function AudioInterview() {
       socket.off("error");
       listenersRegisteredRef.current = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -436,11 +463,13 @@ export function AudioInterview() {
       if (counter <= 0) {
         clearInterval(interval);
         setCountdown(null);
-        handleStartAnswer(); // auto-start recording
+        handleStartAnswer(); 
       }
     }, 1000);
 
     return () => clearInterval(interval);
+ 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion?.questionText, canAnswer]);
 
   useEffect(() => {
@@ -453,6 +482,7 @@ export function AudioInterview() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRecording]);
 
 
@@ -504,7 +534,7 @@ export function AudioInterview() {
         sessionId: sessionIdRef.current,
       });
 
-      mediaRecorderRef.current.start(1000);
+  mediaRecorderRef.current.start(1000);
 
       setIsRecording(true);
       setIsUserSpeaking(true);
@@ -584,9 +614,7 @@ export function AudioInterview() {
         llm,
         interviewType,
         persona,
-        moduleId,
-        pathId,
-        subject: moduleNameFromState || moduleId || pathId || "general",
+  subject: path || module || "general",
         interviewMode: "ai-powered",
         maxQuestions: 10,
         expectedDuration:
