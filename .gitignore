@@ -33,6 +33,8 @@ build/
 server-flask/interview_iq.db
 server-flask/interview_db.sqlite
 
+venv
+
 # Package locks can be large/noisy across multiple clients; keep if you prefer deterministic installs
 # Uncomment to ignore lock files repo-wide (client already has its own policy)
 # package-lock.json
