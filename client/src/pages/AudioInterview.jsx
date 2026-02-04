@@ -521,6 +521,7 @@ export function AudioInterview() {
               audioData: base64Data,
               timestamp: Date.now(),
               sessionId: sessionIdRef.current,
+              questionNumber: currentQuestion.questionNumber,
             });
           };
           reader.readAsDataURL(completeBlob);
@@ -581,20 +582,26 @@ export function AudioInterview() {
       questionId: currentQuestion.questionId || "current-question",
       sessionId: sessionIdRef.current,
     };
-    console.log("📤 Submitting answer immediately:", answerPayload);
-    socket.emit("answer-complete", answerPayload);
-    setCanAnswer(false);
-    waitingForTranscriptionRef.current = false;
-    pendingAnswerDataRef.current = null;
-    setInsights((prev) => [
-      ...prev,
-      {
-        insightType: "system",
-        text: `Answer submitted (${duration.toFixed(
-          1
-        )}s). Generating next question...`,
-      },
-    ]);
+    console.log("📤 Preparing to submit answer:", answerPayload);
+    
+    // CRITICAL FIX: Delay answer-complete to allow process-complete-audio to be sent and processed
+    // The mediaRecorder.stop() event is asynchronous, so we need to wait before calling answer-complete
+    setTimeout(() => {
+      console.log("📤 Submitting answer after audio processing delay:", answerPayload);
+      socket.emit("answer-complete", answerPayload);
+      setCanAnswer(false);
+      waitingForTranscriptionRef.current = false;
+      pendingAnswerDataRef.current = null;
+      setInsights((prev) => [
+        ...prev,
+        {
+          insightType: "system",
+          text: `Answer submitted (${duration.toFixed(
+            1
+          )}s). Generating next question...`,
+        },
+      ]);
+    }, 1500);  // Wait 1500ms to ensure process-complete-audio is sent and server has time to process and transcribe
   };
 
   const handleStartAnswer = () => {

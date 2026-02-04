@@ -17,7 +17,7 @@ import { ExplorePage } from "./pages/Explore";
 import { AudioInterview } from "./pages/AudioInterview";
 import ModulePage from "./pages/ModulesPage";
 import { InterviewSetup } from "./pages/InterviewSetup";
-import Analytics from "./pages/Analytics";
+import Analytics from "./pages/Analytics_Enhanced";
 
 function App() {
   return (
